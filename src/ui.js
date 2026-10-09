@@ -1,0 +1,53 @@
+import { $, cvs, rnd, sleep } from './config.js';
+import { L, drawLot, setB } from './world.js';
+import { P, place, portrait } from './players.js';
+import { ITEMS } from './items.js';
+
+// ---------- UI ----------
+const ov=$('ov');
+export const G={cur:0,over:false,idle:false,wake:null};
+const clr=()=>{ov.innerHTML=''};
+function card(...n){const d=document.createElement('div');d.className='card';d.append(...n);ov.innerHTML='';ov.append(d)}
+function txt(a,b,s1=26,s2=30){const d=document.createElement('div');d.className='tx';d.innerHTML=`<div style="font-size:${s1}px">${a}</div><div style="font-size:${s2}px">${b||''}</div>`;return d}
+function ray(img,col){const d=document.createElement('div');d.className='ray';d.style.background=`repeating-conic-gradient(${col} 0 8deg,rgba(255,255,255,.35) 8deg 16deg)`;img.style.cssText='width:84px;height:84px;display:block';d.append(img);return d}
+export async function ban(img,col,a,b,ms=1200){card(ray(img,col),txt(a,b));await sleep(ms);clr()}
+function btns(list){const b=document.createElement('div');b.style.cssText='display:flex;flex-direction:column;gap:8px';list.forEach(x=>b.append(x));return b}
+const ib=(t,f)=>{const e=document.createElement('button');e.className='ib';e.textContent=t;e.onclick=f;return e};
+export function ask(img,a,b,y,n,s2=22){return new Promise(r=>{img.style.cssText='width:84px;height:84px;border-radius:12px;display:block';
+  card(img,txt(a,b,24,s2),btns([ib(y,()=>{clr();r(true)}),n&&ib(n,()=>{clr();r(false)})].filter(Boolean)))})}
+export function thumb(lv){const c=cvs(96),g=c.getContext('2d');g.fillStyle='rgba(255,255,255,.25)';g.fillRect(0,0,96,96);
+  if(!lv){g.fillStyle='#ebc16d';g.strokeStyle='#d9ab52';g.lineWidth=5;g.beginPath();g.moveTo(48,24);g.lineTo(88,48);g.lineTo(48,72);g.lineTo(8,48);g.closePath();g.fill();g.stroke()}
+  else{g.font='64px sans-serif';g.textAlign='center';g.fillText(['','🏠','🏢','🏙️'][lv],48,70)}return c}
+function bankDlg(p){return new Promise(r=>{const tot=p.cash+p.bank,s=document.createElement('input');s.type='range';s.min=0;s.max=tot;s.step=10;s.value=p.cash;
+  const l=document.createElement('div');l.className='tx';l.style.cssText='background:#222;border-radius:14px;padding:8px 14px;font-size:22px';
+  const up=()=>{l.innerHTML=`Cash: $${s.value}<br>Bank: $${tot-s.value}`};s.oninput=up;up();
+  const w=document.createElement('div');w.style.cssText='display:flex;flex-direction:column;gap:8px;min-width:190px';w.append(l,'🐖 ⇄ 💵',s);w.style.color='#fff';
+  card(w,btns([ib('✔',()=>{p.cash=+s.value;p.bank=tot-p.cash;hud();clr();r()}),ib('✖',()=>{clr();r()})]))})}
+export async function withdrawDlg(p){if(!p.h){
+    const amount=p.bank;p.cash+=amount;p.bank=0;hud();
+    await ban(portrait(p),p.css,'AMBIL TABUNGAN','$'+amount);return}
+  if(p.bank<=0)return ban(portrait(p),p.css,'Tabungan kosong','Belum ada uang untuk diambil',1100);
+  return new Promise(r=>{const amount=document.createElement('input');amount.type='range';amount.min=0;amount.max=p.bank;amount.step=10;amount.value=Math.min(10,p.bank);
+    const status=document.createElement('div');status.className='tx';status.style.cssText='background:#222;border-radius:14px;padding:8px 14px;font-size:22px';
+    const update=()=>{status.innerHTML=`Cash: $${p.cash+(+amount.value)}<br>Tabungan: $${p.bank-(+amount.value)}`};
+    amount.oninput=update;update();
+    const panel=document.createElement('div');panel.style.cssText='display:flex;flex-direction:column;gap:8px;min-width:190px;color:#fff';panel.append(status,'💵 ← 🐖',amount);
+    card(panel,btns([ib('Ambil',()=>{const value=+amount.value;p.cash+=value;p.bank-=value;hud();clr();r()}),ib('Batal',()=>{clr();r()})]))})}
+export function hud(){const p=P[G.cur];$('cash').textContent=p.cash;$('bank').textContent=p.bank;$('pt').innerHTML='';$('pt').append(portrait(p));
+  $('pt').firstChild.style.border='3px solid '+p.css;$('dice').disabled=!G.idle}
+$('dice').onclick=()=>{if(G.idle&&G.wake&&!ov.firstChild){const w=G.wake;G.wake=null;w()}};
+$('hud').onclick=()=>{if(G.idle&&!ov.firstChild)bankDlg(P[0])};
+$('ch').onclick=()=>{if(!G.idle||ov.firstChild)return;const m=P[0].inv.map(x=>x.icon+' '+x.n).join('<br>')||'Belum ada alat';ask(portrait(P[0]),'Alat',m,'✖',0,17)};
+$('bc').onclick=()=>{if(!G.idle||ov.firstChild)return;card(txt('Menu','',24),btns([ib('💾',()=>{save();clr()}),ib('🚪',()=>{location.reload()}),ib('✖',clr)]))};
+function save(){try{localStorage.setItem('mt3d',JSON.stringify({mapVersion:7,cur:G.cur,P:P.map(p=>({pos:p.pos,prev:p.prev,cash:p.cash,bank:p.bank,alive:p.alive,inv:p.inv})),L:L.map(l=>l&&{o:l.o,lv:l.lv})}))}catch(e){}}
+export function load(){try{const q=JSON.parse(localStorage.getItem('mt3d'));if(!q)return false;
+  if(q.mapVersion!==7||!Array.isArray(q.P)||!Array.isArray(q.L)||q.P.length!==P.length||q.L.length!==L.length||q.L.some((a,i)=>a&&!L[i])){
+    localStorage.removeItem('mt3d');return false}
+  G.cur=q.cur;q.P.forEach((a,i)=>{Object.assign(P[i],a);P[i].m.visible=a.alive;place(P[i])});
+  q.L.forEach((a,i)=>{if(a){L[i].o=a.o;L[i].lv=a.lv;drawLot(i);setB(i)}});return true}catch(e){return false}}
+const iconThumb=e=>{const c=cvs(96),g=c.getContext('2d');g.fillStyle='rgba(255,255,255,.25)';g.fillRect(0,0,96,96);g.font='64px sans-serif';g.textAlign='center';g.fillText(e,48,70);return c};
+export async function shop(p){const it=ITEMS.length?ITEMS[rnd(0,ITEMS.length-1)]:0;
+  if(!it){await ban(portrait(p),p.css,'Toko Bus','Barang belum diisi',1200);return}
+  if(!p.h)return;
+  if(p.cash<it.price){await ban(portrait(p),p.css,it.n,'Uang kurang',1000);return}
+  if(await ask(iconThumb(it.icon),it.n,`Harga: ${it.price}`,'🔨','✖')){p.cash-=it.price;p.inv.push(it);hud()}}
