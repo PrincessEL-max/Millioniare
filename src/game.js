@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { $, BN, BUILD, RENT, sleep, tween } from './config.js';
 import { T, nextPos, sn, tp } from './map.js';
 import { cam, renderer, scene } from './scene.js';
-import { L, drawLot, setB } from './world.js';
+import { L, drawLot, flashLot, setB } from './world.js';
 import { OFF, P, place, portrait } from './players.js';
 import { die, face, rollDie } from './dice.js';
 import { G, ask, ban, hud, load, shop, thumb, withdrawDlg } from './ui.js';
@@ -25,6 +25,7 @@ async function land(p){const t=T[p.pos],l=L[p.pos];
   else if(t[1]=='bus')await shop(p);
   else if(t[1]=='bank')await withdrawDlg(p);
   else if(t[1]=='l'){
+    if(l.o!=p.i)await flashLot(p.pos);
     if(l.o<0){
       if(p.cash>=l.price){const y=p.h?await ask(thumb(0),t[0],`Cost: ${l.price}<br>Rent: ${rentFor(l,p.i,0,true)}`,'🔨','✖'):true;
         if(y){p.cash-=l.price;l.o=p.i;drawLot(p.pos);hud();await sleep(300)}}

@@ -35,8 +35,8 @@ const smallLots=[
 ];
 for(const d of smallLots)put(lot(d.x,d.z,d.lx,d.lz,d.n,1,d.group));
 const largeLots=[
-  {tiles:[[0,0],[0,1]],x:-1.4,z:.5,n:'Central Hotel Lot',group:'middle'},
-  {tiles:[[0,2],[0,3]],x:-1.4,z:2.5,n:'Central Restaurant Lot',group:'middle'}
+  {tiles:[[0,0],[0,1]],x:-1.5,z:.5,n:'Central Hotel Lot',group:'middle'},
+  {tiles:[[0,2],[0,3]],x:-1.5,z:2.5,n:'Central Restaurant Lot',group:'middle'}
 ];
 for(const d of largeLots){
   const property={x:d.x,z:d.z,s:2,n:d.n,id:d.n,group:d.group};
@@ -53,10 +53,10 @@ const around=MAP.map(m=>[[1,0],[-1,0],[0,1],[0,-1]]
   .map(([dx,dz])=>at.get(`${m.p[0]+dx},${m.p[1]+dz}`)).filter(i=>i!==undefined));
 export const LINKS=Object.fromEntries(around.map((neighbors,i)=>[i,neighbors]));
 const startBus=at.get('-2,-3');
-LINKS[startBus].push(-1);
-LINKS[-1]=[startBus];
 export const tp=i=>i==-1?[START[0]*2,START[1]*2]:[MAP[i].p[0]*2,MAP[i].p[1]*2];
 export const nextPos=(pos,prev)=>{
+  // START is a one-time spawn point, never a road destination.
+  if(pos==-1)return startBus;
   const options=(LINKS[pos]||[]).filter(i=>i!==prev);
   const choices=options.length?options:LINKS[pos]||[];
   return choices[Math.floor(Math.random()*choices.length)];

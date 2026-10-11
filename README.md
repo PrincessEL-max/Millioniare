@@ -5,6 +5,7 @@
     npm run build    # hasil di dist/
 
 Deploy ke Vercel: push ke GitHub, import di vercel.com/new (Vite terdeteksi otomatis).
+Kontrol zoom papan: gunakan scroll mouse/trackpad atau tombol +, - dan 0 (reset). Titik Start hanya menjadi posisi awal dan tidak dapat dikunjungi lagi.
 
 ## Struktur src/
 - map.js: bentuk jaringan jalan, titik start, lot, ikon, dan pohon. Persimpangan memilih arah acak; jalur buntu membuat pemain berbalik. Lahan kecil berharga 135/sewa dasar 25; lahan besar berukuran 4x, memakai dua petak jalan, dan berharga 200/sewa dasar 50. Sewa dikalikan jumlah petak yang dimiliki pemain pada baris tersebut.

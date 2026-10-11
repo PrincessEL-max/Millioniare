@@ -19,9 +19,9 @@ export function portrait(p){const c=cvs(96),g=c.getContext('2d'),e=(x,y,a,b,f)=>
   c.style.cssText='width:62px;height:62px;border-radius:12px;display:block';return c}
 function mk(p){const g=new THREE.Group(),b=new THREE.Mesh(new THREE.BoxGeometry(.5,.55,.35),mat(p.c));b.position.y=.65;
   const lg=[-.12,.12].map(x=>{const m=new THREE.Mesh(new THREE.BoxGeometry(.18,.4,.2),mat(0x2a3f8a));m.position.set(x,.22,0);return m});
-  const hd=new THREE.Mesh(new THREE.SphereGeometry(.4,16,12),mat(p.sk));hd.position.y=1.3;
-  const hr=new THREE.Mesh(new THREE.SphereGeometry(p.af?.52:.43,16,10,0,7,0,1.6),mat(p.hr));hr.position.y=p.af?1.38:1.34;
-  const ey=[-.15,.15].map(x=>{const m=new THREE.Mesh(new THREE.SphereGeometry(.05,8,6),mat(0x111111));m.position.set(x,1.25,.37);return m});
+  const hd=new THREE.Mesh(new THREE.SphereGeometry(.4,32,24),mat(p.sk));hd.position.y=1.3;
+  const hr=new THREE.Mesh(new THREE.SphereGeometry(p.af?.52:.43,32,20,0,7,0,1.6),mat(p.hr));hr.position.y=p.af?1.38:1.34;
+  const ey=[-.15,.15].map(x=>{const m=new THREE.Mesh(new THREE.SphereGeometry(.05,16,12),mat(0x111111));m.position.set(x,1.25,.37);return m});
   g.add(b,...lg,hd,hr,...ey);g.rotation.y=Math.PI/4;g.scale.setScalar(1.15);return g}
 export const place=p=>{const [x,z]=tp(p.pos);p.m.position.set(x+OFF[p.i][0],.02,z+OFF[p.i][1])};
 P.forEach(p=>{p.m=mk(p);scene.add(p.m);place(p)});
