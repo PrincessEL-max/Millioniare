@@ -15,24 +15,33 @@ function btns(list){const b=document.createElement('div');b.style.cssText='displ
 const ib=(t,f)=>{const e=document.createElement('button');e.className='ib';e.textContent=t;e.onclick=f;return e};
 export function ask(img,a,b,y,n,s2=22){return new Promise(r=>{img.style.cssText='width:84px;height:84px;border-radius:12px;display:block';
   card(img,txt(a,b,24,s2),btns([ib(y,()=>{clr();r(true)}),n&&ib(n,()=>{clr();r(false)})].filter(Boolean)))})}
-export function thumb(lv){const c=cvs(96),g=c.getContext('2d');g.fillStyle='rgba(255,255,255,.25)';g.fillRect(0,0,96,96);
+export function thumb(lv,hotel=false){const c=cvs(96),g=c.getContext('2d');g.fillStyle='rgba(255,255,255,.25)';g.fillRect(0,0,96,96);
   if(!lv){g.fillStyle='#ebc16d';g.strokeStyle='#d9ab52';g.lineWidth=5;g.beginPath();g.moveTo(48,24);g.lineTo(88,48);g.lineTo(48,72);g.lineTo(8,48);g.closePath();g.fill();g.stroke()}
-  else{g.font='64px sans-serif';g.textAlign='center';g.fillText(['','🏠','🏢','🏙️'][lv],48,70)}return c}
+  else{g.font='64px sans-serif';g.textAlign='center';g.fillText(hotel?['','🏨','🏨','🏨','🏨','🏨'][lv]:['','🏚️','🏠','🏡','🏘️','🏰'][lv],48,70)}return c}
 function bankDlg(p){return new Promise(r=>{const tot=p.cash+p.bank,s=document.createElement('input');s.type='range';s.min=0;s.max=tot;s.step=10;s.value=p.cash;
   const l=document.createElement('div');l.className='tx';l.style.cssText='background:#222;border-radius:14px;padding:8px 14px;font-size:22px';
   const up=()=>{l.innerHTML=`Cash: $${s.value}<br>Bank: $${tot-s.value}`};s.oninput=up;up();
   const w=document.createElement('div');w.style.cssText='display:flex;flex-direction:column;gap:8px;min-width:190px';w.append(l,'🐖 ⇄ 💵',s);w.style.color='#fff';
   card(w,btns([ib('✔',()=>{p.cash=+s.value;p.bank=tot-p.cash;hud();clr();r()}),ib('✖',()=>{clr();r()})]))})}
-export async function withdrawDlg(p){if(!p.h){
-    const amount=p.bank;p.cash+=amount;p.bank=0;hud();
-    await ban(portrait(p),p.css,'AMBIL TABUNGAN','$'+amount);return}
-  if(p.bank<=0)return ban(portrait(p),p.css,'Tabungan kosong','Belum ada uang untuk diambil',1100);
-  return new Promise(r=>{const amount=document.createElement('input');amount.type='range';amount.min=0;amount.max=p.bank;amount.step=10;amount.value=Math.min(10,p.bank);
-    const status=document.createElement('div');status.className='tx';status.style.cssText='background:#222;border-radius:14px;padding:8px 14px;font-size:22px';
-    const update=()=>{status.innerHTML=`Cash: $${p.cash+(+amount.value)}<br>Tabungan: $${p.bank-(+amount.value)}`};
-    amount.oninput=update;update();
-    const panel=document.createElement('div');panel.style.cssText='display:flex;flex-direction:column;gap:8px;min-width:190px;color:#fff';panel.append(status,'💵 ← 🐖',amount);
-    card(panel,btns([ib('Ambil',()=>{const value=+amount.value;p.cash+=value;p.bank-=value;hud();clr();r()}),ib('Batal',()=>{clr();r()})]))})}
+export async function withdrawDlg(p){
+  if(!p.h){const amount=p.bank;p.cash+=amount;p.bank=0;hud();return}
+  return new Promise(resolve=>{
+    const slider=document.createElement('input');slider.type='range';slider.min='0';slider.max=String(Math.max(1,p.bank));slider.step='1';slider.value=String(Math.floor(p.bank/2));slider.disabled=p.bank<=0;
+    const cash=document.createElement('div');cash.className='bank-balance bank-cash tx';
+    const bank=document.createElement('div');bank.className='bank-balance bank-account tx';
+    const update=()=>{const amount=+slider.value;cash.textContent=`Cash: $${p.cash+amount}`;bank.textContent=`Bank: $${p.bank-amount}`};
+    slider.addEventListener('input',update);update();
+    const transfer=document.createElement('div');transfer.className='bank-transfer-row';
+    const pig=document.createElement('span');pig.className='bank-icon';pig.textContent='🐷';pig.setAttribute('aria-hidden','true');
+    const notes=document.createElement('span');notes.className='bank-icon';notes.textContent='💵';notes.setAttribute('aria-hidden','true');
+    transfer.append(pig,slider,notes);
+    const actions=document.createElement('div');actions.className='bank-actions';
+    const confirm=ib('✔',()=>{const amount=+slider.value;p.cash+=amount;p.bank-=amount;hud();clr();resolve()});
+    const cancel=ib('✖',()=>{clr();resolve()});
+    confirm.classList.add('bank-confirm');cancel.classList.add('bank-cancel');actions.append(confirm,cancel);
+    const panel=document.createElement('div');panel.className='bank-panel';panel.append(cash,transfer,bank,actions);card(panel);
+  })
+}
 export function hud(){const p=P[G.cur];$('cash').textContent=p.cash;$('bank').textContent=p.bank;$('pt').innerHTML='';$('pt').append(portrait(p));
   $('pt').firstChild.style.border='3px solid '+p.css;$('dice').disabled=!G.idle}
 $('dice').onclick=()=>{if(G.idle&&G.wake&&!ov.firstChild){const w=G.wake;G.wake=null;w()}};

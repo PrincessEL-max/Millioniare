@@ -7,6 +7,7 @@ export const renderer=new THREE.WebGLRenderer({canvas:$('c'),antialias:true,powe
 renderer.setPixelRatio(Math.min(devicePixelRatio,2.5));
 renderer.outputEncoding=THREE.sRGBEncoding;
 export const cam=new THREE.OrthographicCamera(-1,1,1,-1,.1,150);
+export const panOffset=new THREE.Vector3();
 function rs(){const w=$('app').clientWidth,h=$('app').clientHeight,a=w/h,hh=Math.max(5.2,6.5/a);renderer.setSize(w,h,false);
   cam.left=-hh*a;cam.right=hh*a;cam.top=hh;cam.bottom=-hh;cam.updateProjectionMatrix()}
 addEventListener('resize',rs);rs();
@@ -19,6 +20,35 @@ $('zoomIn').addEventListener('click',zoomIn);
 $('zoomOut').addEventListener('click',zoomOut);
 $('zoomReset').addEventListener('click',resetZoom);
 const canvas=$('c');
+let drag=null;
+canvas.style.cursor='grab';
+canvas.style.touchAction='none';
+canvas.addEventListener('pointerdown',e=>{
+  if(e.button!==0)return;
+  e.preventDefault();
+  cam.updateMatrixWorld();
+  const right=new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld,0);
+  const up=new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld,1);
+  const direction=cam.getWorldDirection(new THREE.Vector3());
+  const groundUp=up.addScaledVector(direction,-up.y/direction.y);
+  drag={id:e.pointerId,x:e.clientX,y:e.clientY,offset:panOffset.clone(),right,groundUp,
+    scale:(cam.top-cam.bottom)/(cam.zoom*canvas.clientHeight)};
+  canvas.setPointerCapture(e.pointerId);
+  canvas.style.cursor='grabbing';
+});
+canvas.addEventListener('pointermove',e=>{
+  if(!drag||drag.id!==e.pointerId)return;
+  const dx=e.clientX-drag.x,dy=e.clientY-drag.y;
+  panOffset.copy(drag.offset).addScaledVector(drag.right,-dx*drag.scale).addScaledVector(drag.groundUp,dy*drag.scale);
+});
+const endDrag=e=>{
+  if(!drag||drag.id!==e.pointerId)return;
+  drag=null;
+  canvas.style.cursor='grab';
+};
+canvas.addEventListener('pointerup',endDrag);
+canvas.addEventListener('pointercancel',endDrag);
+canvas.addEventListener('lostpointercapture',endDrag);
 canvas.addEventListener('wheel',e=>{e.preventDefault();e.deltaY<0?zoomIn():zoomOut()},{passive:false});
 addEventListener('keydown',e=>{
   if(e.target instanceof HTMLInputElement||e.target instanceof HTMLTextAreaElement)return;

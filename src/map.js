@@ -33,7 +33,11 @@ const smallLots=[
   ...[-3,-2,-1].map(x=>({x,z:4,lx:x,lz:5,n:`South West ${x}`,group:'south-west'})),
   ...[1,2,3,4].map(x=>({x,z:4,lx:x,lz:5,n:`South East ${x}`,group:'south-east'}))
 ];
-for(const d of smallLots)put(lot(d.x,d.z,d.lx,d.lz,d.n,1,d.group));
+for(const d of smallLots){
+  const tile=lot(d.x,d.z,d.lx,d.lz,d.n,1,d.group),existing=tiles.get(tile.p.join(','));
+  if(existing?.ic)tile.ic=existing.ic;
+  put(tile);
+}
 const largeLots=[
   {tiles:[[0,0],[0,1]],x:-1.5,z:.5,n:'Central Hotel Lot',group:'middle'},
   {tiles:[[0,2],[0,3]],x:-1.5,z:2.5,n:'Central Restaurant Lot',group:'middle'}
@@ -44,7 +48,7 @@ for(const d of largeLots){
 }
 export const MAP=[...tiles.values()];
 export const TREES={fixed:[],random:{n:0,box:[-8,-8,8,8]}};
-export const T=MAP.map(m=>m.lot?[m.lot.n,'l']:m.ic?
+export const T=MAP.map(m=>m.lot?[m.lot.n,'l',m.ic||null]:m.ic?
   m.ic.t=='bus'?['Bus','bus']:m.ic.t=='bank'?['Tabungan','bank']:
   m.ic.t=='star'?['Bintang','star']:[String(m.ic.v),'pad',m.ic.v,m.ic.c]:['Jalan','r']);
 export const N=MAP.length;
