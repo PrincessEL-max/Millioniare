@@ -73,7 +73,7 @@ function lotFrame(w,lx,lz){const g=new THREE.Group(),thick=.1,edge=w/2-thick/2,m
   g.position.set(lx,0,lz);scene.add(g);return {group:g,material}}
 export function drawLot(i){const l=L[i],g=l.c.getContext('2d');g.setTransform(4,0,0,4,0,0);const fill=g.createLinearGradient(8,8,120,120);fill.addColorStop(0,'#f4cb68');fill.addColorStop(1,'#e5ad45');g.fillStyle=fill;g.fillRect(0,0,128,128);g.strokeStyle='#c89438';g.lineWidth=3;
   g.beginPath();g.moveTo(64,6);g.lineTo(64,122);g.moveTo(6,64);g.lineTo(122,64);g.stroke();
-  const ownerColors=['#ef1717','#24a844','#1686ea'];
+  const ownerColors=['#e53935','#43a047','#1e88e5','#ff9800','#9c27b0','#00acc1'];
   l.tex.needsUpdate=true;l.frame.material.color.set(l.o<0?'#f7dea0':ownerColors[l.o])}
 T.forEach((t,i)=>{const [x,z]=tp(i),M=MAP[i],q=M.p,neighbors=LINKS[i].map(j=>MAP[j]).filter(Boolean);
   const arms=[];for(const n of neighbors){const dx=n.p[0]-q[0],dz=n.p[1]-q[1];arms.push(dx<0?'w':dx>0?'e':dz<0?'n':'s')}
@@ -99,7 +99,7 @@ export async function flashLot(i){const target=L[i];if(!target?.frame||target.o<
   const lots=[...new Set(L)].filter(l=>l&&l.group==target.group&&l.o==target.o&&l.frame);
   const colors=[0xffee58,0xff695e,0xffffff,0x5ee6ff];
   for(let round=0;round<3;round++)for(const color of colors){lots.forEach(l=>l.frame.material.color.setHex(color));await new Promise(resolve=>setTimeout(resolve,75))}
-  const ownerColors=['#ef1717','#24a844','#1686ea'];
+  const ownerColors=['#e53935','#43a047','#1e88e5','#ff9800','#9c27b0','#00acc1'];
   lots.forEach(l=>l.frame.material.color.set(l.o<0?'#f7dea0':ownerColors[l.o]))}
 function tree(x,z){const g=new THREE.Group(),c=[0xf3b127,0xc45ad1,0x66cc33][rnd(0,2)];
   const tr=new THREE.Mesh(new THREE.CylinderGeometry(.1,.14,.7,6),mat(0x7a4a24));tr.position.y=.35;g.add(tr);
