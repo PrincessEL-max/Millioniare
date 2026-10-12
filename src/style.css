@@ -21,6 +21,14 @@ body{background:var(--bg);font-family:system-ui,-apple-system,"Segoe UI",Roboto,
 #side #dice::after{content:"LEMPAR DADU";color:#b51e1e;font-size:9px;font-weight:900;line-height:1;letter-spacing:.03em}
 #ov{position:absolute;z-index:3;top:0;bottom:0;left:0;right:92px;display:flex;align-items:center;justify-content:center;pointer-events:none}
 .card{pointer-events:auto;background:var(--gl);border-radius:22px;padding:14px 18px;max-width:94%;display:flex;gap:14px;align-items:center;box-shadow:0 6px 22px #0006}
+.setup-form{width:min(430px,84vw);max-height:calc(100vh - 48px);overflow:auto;display:grid;grid-template-columns:1fr 1fr;gap:12px;color:#fff;font-style:normal;letter-spacing:0}
+.setup-form h2,.setup-note,.setup-error,.setup-start{grid-column:1/-1;margin:0}
+.setup-form h2{text-align:center;font-size:clamp(20px,4vw,28px)}
+.setup-field{display:grid;gap:5px;font-size:14px;font-weight:700}
+.setup-field input{box-sizing:border-box;width:100%;min-width:0;padding:10px;border:1px solid #ffffff99;border-radius:10px;background:#fff;color:#222;font-size:18px}
+.setup-note,.setup-error{text-align:center;font-size:13px}
+.setup-error{color:#ffe07a}
+.setup-start{padding:12px 16px;border:0;border-radius:12px;background:#43a047;color:#fff;font-size:17px;font-weight:800;cursor:pointer}
 .ray{border-radius:14px;overflow:hidden;line-height:0;flex:none}
 .ib{width:52px;height:52px;border-radius:50%;border:0;font-size:26px;background:#fff;color:#222;cursor:pointer}
 input[type=range]{width:100%}

@@ -3,9 +3,9 @@ import { $, BN, BUILD, HOTEL, RENT, sleep, tween } from './config.js';
 import { T, nextPos, sn, tp } from './map.js';
 import { cam, panOffset, renderer, scene } from './scene.js';
 import { L, drawLot, flashLot, setB } from './world.js';
-import { OFF, P, place, portrait } from './players.js';
+import { configurePlayers, OFF, P, place, portrait } from './players.js';
 import { die, face, rollDie } from './dice.js';
-import { G, ask, ban, hud, load, shop, thumb, withdrawDlg } from './ui.js';
+import { G, ask, ban, hud, load, setupGame, shop, thumb, withdrawDlg } from './ui.js';
 
 // ---------- aturan ----------
 const ownedLots=()=>[...new Set(L)].filter(Boolean);
@@ -49,9 +49,21 @@ async function main(){
       const v=await rollDie(p);await ban(face(v),'#9fb0c2',String(v),'GO',900);
       await step(p,v);die.visible=false;await land(p);check()}
     G.cur=(G.cur+1)%P.length}}
-(async()=>{let ok=false;try{ok=!!localStorage.getItem('mt3d')}catch(e){}
-  if(ok){const resume=await ask(portrait(P[0]),'Game tersimpan','Lanjutkan?','▶','🆕',22);
-    if(resume){if(!load())await ban(portrait(P[0]),P[0].css,'Simpanan lama','Mulai permainan baru',1100);
-      else foc.copy(P[G.cur].m.position)}
-    else localStorage.removeItem('mt3d')}
-  main()})();
+(async()=>{
+  let ok=false,resumed=false;
+  try{ok=!!localStorage.getItem('mt3d')}catch(e){}
+  if(ok){
+    const resume=await ask(portrait(P[0]),'Game tersimpan','Lanjutkan?','▶','🆕',22);
+    if(resume){
+      resumed=load();
+      if(!resumed)await ban(portrait(P[0]),P[0].css,'Simpanan lama','Mulai permainan baru',1100);
+      else foc.copy(P[G.cur].m.position);
+    }else localStorage.removeItem('mt3d');
+  }
+  if(!resumed){
+    const settings=await setupGame();
+    configurePlayers(settings);
+    try{localStorage.removeItem('mt3d')}catch(e){}
+  }
+  main();
+})();
