@@ -2,16 +2,16 @@ import * as THREE from 'three';
 import { $, LOT_LARGE, LOT_SMALL, OWN, RENT_LARGE, RENT_SMALL, cvs, hex, mat, rnd } from './config.js';
 import { LINKS, MAP, START, T, TREES, tp } from './map.js';
 import { renderer, scene } from './scene.js';
-import { createHouse1 } from '../../house/house1.js';
-import { createHouse2 } from '../../house/house2.js';
-import { createHouse3 } from '../../house/house3.js';
-import { createHouse4 } from '../../house/house4.js';
-import { createHouse5 } from '../../house/house5.js';
-import { createHotel } from '../../hotel/hotel.js';
-import { createHotel2 } from '../../hotel/hotel2.js';
-import { createHotel3 } from '../../hotel/hotel3.js';
-import { createHotel4 } from '../../hotel/hotel4.js';
-import { createHotel5 } from '../../hotel/hotel5.js';
+import { createHouse1 } from '../house/house1.js';
+import { createHouse2 } from '../house/house2.js';
+import { createHouse3 } from '../house/house3.js';
+import { createHouse4 } from '../house/house4.js';
+import { createHouse5 } from '../house/house5.js';
+import { createHotel } from '../hotel/hotel.js';
+import { createHotel2 } from '../hotel/hotel2.js';
+import { createHotel3 } from '../hotel/hotel3.js';
+import { createHotel4 } from '../hotel/hotel4.js';
+import { createHotel5 } from '../hotel/hotel5.js';
 
 // ---------- jalan & lot ----------
 const ICONS={'pad-20':'coin-20.png','pad-50':'coin-50.png','pad-100':'coin-100.png',bus:'bus.png',bank:'bank.png',star:'star.png'};
