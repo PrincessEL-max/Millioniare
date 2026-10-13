@@ -20,5 +20,5 @@ Contoh Three.js:
 React (paket react-dropin sebelumnya):
   <ModelViewer url="/assets/models/pets/santa.glb" animation="Run" />
 
-Jalankan viewer di VS Code: install extension "Live Server", klik kanan index.html > Open with Live Server.
+Jalankan viewer dari root proyek dengan `npm run dev`, lalu buka `/pets-pack/`. Import Three.js memakai dependency proyek.
 Satu petak = 1.7 unit; kalau papan kamu beda ukuran, scale model di engine.

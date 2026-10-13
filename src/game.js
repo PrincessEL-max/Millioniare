@@ -237,19 +237,13 @@ function setObstacle(tile,data){
 function clearObstacle(tile){const obstacle=obstacles.get(tile);if(!obstacle)return false;
   scene.remove(obstacle.model);disposeObject(obstacle.model);obstacles.delete(tile);return true}
 function isPathTile(tile){return Number.isInteger(tile)&&tile>=0&&tile<T.length}
-function forwardNeighbor(pos,prev){
-  if(!Number.isInteger(prev)||prev<0)return (LINKS[pos]||[])[0]??null;
-  const current=MAP[pos].p,previous=MAP[prev].p,dx=current[0]-previous[0],dz=current[1]-previous[1];
-  return (LINKS[pos]||[]).find(index=>MAP[index].p[0]-current[0]===dx&&MAP[index].p[1]-current[1]===dz)??null;
-}
 function nextMoveFor(p){
   const direction=p.forcedDirection||(obstacles.get(p.pos)?.id==='street-sign'
     ?obstacles.get(p.pos).dir:null);
   const directed=direction?directedNeighbor(p.pos,p.prev,direction):null;
   if(Number.isInteger(directed))return {from:p.pos,prev:p.prev,to:directed,forced:!!p.forcedDirection};
-  const to=p.forcedDirection
-    ?forwardNeighbor(p.pos,p.prev)??nextPos(p.pos,p.prev)
-    :nextPos(p.pos,p.prev);
+  if(p.forcedDirection)p.forcedDirection=null;
+  const to=nextPos(p.pos,p.prev);
   return Number.isInteger(to)?{from:p.pos,prev:p.prev,to}:null;
 }
 function moveYaw(from,to){

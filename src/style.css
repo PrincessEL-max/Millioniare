@@ -4,7 +4,7 @@
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 html,body{height:100%;margin:0}
 body{background:var(--bg);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden;-webkit-user-select:none;user-select:none}
-#app{position:relative;width:100%;height:100%;overflow:hidden}
+#app{position:relative;width:100%;height:100%;height:100dvh;overflow:hidden}
 #c{position:absolute;inset:0;z-index:0;display:block;width:100%;height:100%;touch-action:none}
 #zoom{display:none}
 #zoom button{width:42px;height:42px;border:1px solid #fff9;border-radius:12px;background:rgba(38,50,66,.84);color:#fff;font-size:26px;font-weight:700;line-height:1;cursor:pointer;box-shadow:0 2px 8px #0005}
@@ -48,3 +48,37 @@ body{background:var(--bg);font-family:system-ui,-apple-system,"Segoe UI",Roboto,
 input[type=range]{width:100%}
 #street{position:absolute;z-index:2;left:0;right:92px;bottom:14px;text-align:center;font-size:30px;pointer-events:none}
 @media(max-width:520px){#street{font-size:22px}}
+#rotate{display:none}
+button{touch-action:manipulation}
+@media (orientation:portrait) and (max-width:900px){
+  #rotate{position:absolute;z-index:10;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;background:#17212bed;color:#fff;text-align:center;font-style:normal;letter-spacing:0}
+  #rotate span{font-size:56px;line-height:1}
+  #rotate strong{font-size:clamp(20px,5vw,28px)}
+  #rotate small{font-size:14px}
+}
+@media (orientation:landscape) and (max-height:600px) and (max-width:1000px){
+  #hud{top:max(6px,env(safe-area-inset-top));left:max(8px,env(safe-area-inset-left));gap:clamp(8px,2vw,16px);font-size:clamp(14px,3.8vh,21px)}
+  #side{top:max(6px,env(safe-area-inset-top));right:max(6px,env(safe-area-inset-right));bottom:max(6px,env(safe-area-inset-bottom));width:56px;border-radius:12px}
+  #side button{width:46px;height:46px;border-radius:11px;font-size:34px}
+  #side #dice{width:54px;height:66px}
+  #side #dice canvas{width:36px!important;height:36px!important}
+  #side #dice::after{font-size:7px}
+  #ov{left:max(4px,env(safe-area-inset-left));right:68px}
+  .card{max-width:98%;max-height:calc(100dvh - 20px);overflow:auto;gap:10px;padding:10px 12px;border-radius:16px}
+  .card .tx>div:first-child{font-size:clamp(16px,4.3vh,23px)!important}
+  .card .tx>div:nth-child(2){font-size:clamp(13px,3.4vh,18px)!important}
+  .target-card{top:6px}
+  .target-message{font-size:clamp(12px,3.2vh,16px)}
+  .setup-form{max-height:calc(100dvh - 20px);gap:8px}
+  .setup-field{font-size:12px}
+  .setup-field input,.card input[type=number]{padding:7px;font-size:16px}
+  .setup-start{padding:8px 12px;font-size:15px}
+  .online-lobby{gap:8px}
+  .online-lobby h2{font-size:20px}
+  .room-code{padding:8px;font-size:20px}
+  .room-status strong{font-size:26px}
+  #zoom{position:absolute;z-index:2;left:max(8px,env(safe-area-inset-left));bottom:max(8px,env(safe-area-inset-bottom));display:flex;gap:6px}
+  #zoom button{width:38px;height:38px;border-radius:10px;font-size:22px}
+  #zoom button:last-child{font-size:19px}
+  #street{left:0;right:68px;bottom:max(8px,env(safe-area-inset-bottom));font-size:clamp(16px,4vh,22px)}
+}

@@ -7,6 +7,13 @@
 Deploy ke Vercel: push ke GitHub, import di vercel.com/new (Vite terdeteksi otomatis).
 Kontrol zoom papan: gunakan scroll mouse/trackpad atau tombol +, - dan 0 (reset). Titik Start hanya menjadi posisi awal dan tidak dapat dikunjungi lagi.
 
+## Aplikasi Android
+- Proyek Android dibangun dengan Capacitor; game berjalan di dalam aplikasi dan tidak membuka browser.
+- Aplikasi dikunci ke orientasi landscape. Geser papan dengan satu jari; tombol +, −, dan ↺ di kiri bawah mengatur zoom.
+- Tombol menu, alat, dan dadu berada di sisi kanan layar.
+- Jalankan `npm install`, lalu `npm run android:sync`. Buka proyek dengan `npm run android:open`; di Android Studio pilih **Build → Build Bundle(s) / APK(s) → Build APK(s)**. APK debug tersedia di `android/app/build/outputs/apk/debug/app-debug.apk`.
+- Setelah perubahan web, jalankan `npm run android:sync` lagi sebelum membuat APK baru.
+
 ## Bermain online
 - Buat project Supabase, lalu salin Project URL dan anon/publishable key.
 - Untuk lokal, salin `.env.example` menjadi `.env.local` dan isi `VITE_SUPABASE_URL` serta `VITE_SUPABASE_ANON_KEY`.

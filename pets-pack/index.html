@@ -8,13 +8,10 @@ html,body{margin:0;height:100%;overflow:hidden;background:#cfe3ff;font-family:sy
 button{border:0;border-radius:14px;padding:6px 14px;font-weight:600;margin-right:6px;cursor:pointer}
 </style></head><body>
 <div id="ui">Geser mouse = putar kamera<br><button id="idle">Diam</button><button id="move">Gerak</button></div>
-<script type="importmap">
-{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
-</script>
 <script type="module">
 import * as THREE from 'three';
-import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
-import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {GLTFLoader} from 'three/examples/jsm/loaders/GLTFLoader.js';
+import {OrbitControls} from 'three/examples/jsm/controls/OrbitControls.js';
 
 const renderer=new THREE.WebGLRenderer({antialias:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);

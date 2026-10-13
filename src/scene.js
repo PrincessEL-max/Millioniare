@@ -4,13 +4,14 @@ import { $, mat } from './config.js';
 // ---------- scene ----------
 export const scene=new THREE.Scene();scene.background=new THREE.Color(0x8fd6ff);
 export const renderer=new THREE.WebGLRenderer({canvas:$('c'),antialias:true,powerPreference:'high-performance'});
-renderer.setPixelRatio(Math.min(devicePixelRatio,2.5));
+const mobileScreen=matchMedia('(max-width: 1000px) and (pointer: coarse)').matches;
+renderer.setPixelRatio(Math.min(devicePixelRatio,mobileScreen?1.5:2.5));
 renderer.outputEncoding=THREE.sRGBEncoding;
 export const cam=new THREE.OrthographicCamera(-1,1,1,-1,.1,150);
 export const panOffset=new THREE.Vector3();
 function rs(){const w=$('app').clientWidth,h=$('app').clientHeight,a=w/h,hh=Math.max(5.2,6.5/a);renderer.setSize(w,h,false);
   cam.left=-hh*a;cam.right=hh*a;cam.top=hh;cam.bottom=-hh;cam.updateProjectionMatrix()}
-addEventListener('resize',rs);rs();
+addEventListener('resize',rs);addEventListener('orientationchange',rs);window.visualViewport?.addEventListener('resize',rs);rs();
 const MIN_ZOOM=.65,MAX_ZOOM=2.8;
 function setZoom(value){cam.zoom=Math.max(MIN_ZOOM,Math.min(MAX_ZOOM,value));cam.updateProjectionMatrix()}
 export const zoomIn=()=>setZoom(cam.zoom*1.2);
