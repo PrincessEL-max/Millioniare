@@ -26,17 +26,18 @@ function pcMarkup(id){return `<svg viewBox="0 0 1564 796" style="width:100%;heig
 <path d="M1090 118L1385 22" stroke="#e58a8a" stroke-opacity=".3" stroke-width="5" fill="none"/>
 <g stroke="#8b96a0" stroke-opacity=".4" stroke-width="7" stroke-linecap="round"><path d="M428 558l13-20M458 562l13-20M486 566l13-20M514 570l13-20"/></g>
 <text class="pc-ghost" x="400" y="742" font-size="112" font-weight="700" font-family="${FONT}" fill="#b9c2c8" opacity=".25" style="white-space:pre"></text>
-<rect x="22" y="18" width="1120" height="517" rx="72" fill="url(#${id}-panel)"/>
-<rect x="25" y="21" width="1114" height="511" rx="69" fill="none" stroke="#eef2f5" stroke-opacity=".75" stroke-width="5"/>
-<g filter="url(#${id}-txt)" font-family="${FONT}" font-weight="700" fill="#fff" stroke="#d3dadf" stroke-width="2" paint-order="stroke">
-<text class="pc-name" data-slot="name" x="90" y="147" font-size="112" style="white-space:pre"></text>
-<text class="pc-cost" data-slot="cost" x="540" y="252" font-size="54" style="white-space:pre"></text>
-<text class="pc-rent" data-slot="rent" x="540" y="312" font-size="54" style="white-space:pre"></text>
+<rect x="22" y="18" width="1120" height="517" rx="56" fill="url(#${id}-panel)"/>
+<rect x="25" y="21" width="1114" height="511" rx="53" fill="none" stroke="#eef2f5" stroke-opacity=".75" stroke-width="5"/>
+<path d="M78 172H1084" stroke="#fff" stroke-opacity=".65" stroke-width="5" stroke-linecap="round"/>
+<g filter="url(#${id}-txt)" font-family="${FONT}" font-weight="700" fill="#263746" stroke="#f0f4f6" stroke-width="1.5" paint-order="stroke">
+<text class="pc-name" data-slot="name" x="82" y="133" font-size="94" style="white-space:pre"></text>
+<text class="pc-cost" data-slot="cost" x="560" y="255" font-size="54" style="white-space:pre"></text>
+<text class="pc-rent" data-slot="rent" x="560" y="325" font-size="54" style="white-space:pre"></text>
 </g>
 <polygon class="pc-tile" fill="url(#${id}-gold)" stroke="#f9dc86" stroke-width="13" stroke-linejoin="round"/>
 <polygon class="pc-tileIn" fill="none" stroke="#e0a23a" stroke-width="2.5"/>
 <path class="pc-grid" stroke="#d99a2c" stroke-opacity=".55" stroke-width="2" fill="none"/>
-<image class="pc-preview" x="72" y="215" width="410" height="320" preserveAspectRatio="xMidYMid meet" pointer-events="none"/>
+<image class="pc-preview" x="34" y="176" width="490" height="360" preserveAspectRatio="xMidYMid meet" pointer-events="none"/>
 <g class="pc-x" style="cursor:pointer;transform-box:fill-box;transform-origin:center;transition:transform .08s" transform="translate(1416 682)" role="button" aria-label="Tutup">
 <rect x="-67" y="-20" width="134" height="40" rx="12" transform="rotate(45)" fill="url(#${id}-wood)" stroke="#4d260c" stroke-width="6"/>
 <rect x="-67" y="-20" width="134" height="40" rx="12" transform="rotate(-45)" fill="url(#${id}-wood)" stroke="#4d260c" stroke-width="6"/>
@@ -94,7 +95,7 @@ export function createPropertyCard(root,opts={}){
     if(d.name!==undefined)o.name=d.name;if(d.cost!==undefined)o.cost=d.cost;if(d.rent!==undefined)o.rent=d.rent;
     $('.pc-name').textContent=o.name;$('.pc-ghost').textContent=o.name;
     $('.pc-cost').textContent='Cost : '+o.cost;$('.pc-rent').textContent='Rent : '+o.rent;
-    fit($('.pc-name'),770);fit($('.pc-ghost'),760);fit($('.pc-cost'),300);fit($('.pc-rent'),270);
+    fit($('.pc-name'),950);fit($('.pc-ghost'),760);fit($('.pc-cost'),460);fit($('.pc-rent'),460);
   }
   setData();
   const preview=$('.pc-preview');

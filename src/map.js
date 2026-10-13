@@ -95,11 +95,8 @@ export function directedNeighbor(pos,prev,direction){
   const current=MAP[pos].p,previous=Number.isInteger(prev)&&prev>=0?MAP[prev].p:START;
   const dx=current[0]-previous[0],dz=current[1]-previous[1];
   const vector={forward:[dx,dz],backward:[-dx,-dz],left:[dz,-dx],right:[-dz,dx]}[direction];
-  const directed=vector&&options.find(index=>MAP[index].p[0]-current[0]===vector[0]&&MAP[index].p[1]-current[1]===vector[1]);
-  if(directed!==undefined)return directed;
-  const forward=options.find(index=>MAP[index].p[0]-current[0]===dx&&MAP[index].p[1]-current[1]===dz);
-  if(forward!==undefined)return forward;
-  return (Number.isInteger(prev)&&prev>=0&&options.includes(prev)?prev:undefined)??options[0];
+  if(!vector)return null;
+  return options.find(index=>MAP[index].p[0]-current[0]===vector[0]&&MAP[index].p[1]-current[1]===vector[1])??null;
 }
 const startBus=at.get('2,-2');
 export const tp=i=>i==-1?[START[0]*2,START[1]*2]:[MAP[i].p[0]*2,MAP[i].p[1]*2];

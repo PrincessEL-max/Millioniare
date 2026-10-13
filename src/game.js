@@ -141,11 +141,19 @@ function setObstacle(tile,data){
 function clearObstacle(tile){const obstacle=obstacles.get(tile);if(!obstacle)return false;
   scene.remove(obstacle.model);disposeObject(obstacle.model);obstacles.delete(tile);return true}
 function isPathTile(tile){return Number.isInteger(tile)&&tile>=0&&tile<T.length}
+function forwardNeighbor(pos,prev){
+  if(!Number.isInteger(prev)||prev<0)return (LINKS[pos]||[])[0]??null;
+  const current=MAP[pos].p,previous=MAP[prev].p,dx=current[0]-previous[0],dz=current[1]-previous[1];
+  return (LINKS[pos]||[]).find(index=>MAP[index].p[0]-current[0]===dx&&MAP[index].p[1]-current[1]===dz)??null;
+}
 function nextMoveFor(p){
-  const obstacle=obstacles.get(p.pos);
-  const direction=obstacle?.dir==='front'?'forward':obstacle?.dir==='back'?'backward':obstacle?.dir;
-  const to=obstacle?.id==='street-sign'
-    ?directedNeighbor(p.pos,p.prev,direction)
+  const direction=p.forcedDirection||(obstacles.get(p.pos)?.id==='street-sign'
+    ?obstacles.get(p.pos).dir==='front'?'forward':obstacles.get(p.pos).dir==='back'?'backward':obstacles.get(p.pos).dir
+    :null);
+  const directed=direction?directedNeighbor(p.pos,p.prev,direction):null;
+  if(Number.isInteger(directed))return {from:p.pos,prev:p.prev,to:directed,forced:!!p.forcedDirection};
+  const to=p.forcedDirection
+    ?forwardNeighbor(p.pos,p.prev)??nextPos(p.pos,p.prev)
     :nextPos(p.pos,p.prev);
   return Number.isInteger(to)?{from:p.pos,prev:p.prev,to}:null;
 }
@@ -446,9 +454,13 @@ canvas.addEventListener('pointerup',event=>{
 canvas.addEventListener('pointercancel',()=>{targetPointer=null});
 async function step(p,n){for(let k=0;k<n;k++){
     if(obstacles.get(p.pos)?.id==='street-sign'){
-      const move=nextMoveFor(p);clearObstacle(p.pos);p.nextMove=move;
+      const sign=obstacles.get(p.pos);
+      p.forcedDirection=sign.dir==='front'?'forward':sign.dir==='back'?'backward':sign.dir;
+      clearObstacle(p.pos);p.nextMove=nextMoveFor(p);
     }
-    const nx=validNextMove(p.nextMove,p)?p.nextMove.to:nextMoveFor(p)?.to;
+    const move=validNextMove(p.nextMove,p)?p.nextMove:nextMoveFor(p);
+    const nx=move?.to;
+    if(move?.forced)p.forcedDirection=null;
     p.nextMove=null;
     if(!Number.isInteger(nx))break;
     const a=tp(p.pos);
@@ -475,10 +487,9 @@ async function step(p,n){for(let k=0;k<n;k++){
     const obstacle=obstacles.get(nx);
     p.prev=p.pos;p.pos=nx;$('street').textContent=sn(nx);
     if(obstacle?.id==='street-sign'){
-      const direction=obstacle.dir==='front'?'forward':obstacle.dir==='back'?'backward':obstacle.dir;
-      const to=directedNeighbor(nx,p.prev,direction);
+      p.forcedDirection=obstacle.dir==='front'?'forward':obstacle.dir==='back'?'backward':obstacle.dir;
       clearObstacle(nx);
-      p.nextMove=Number.isInteger(to)?{from:nx,prev:p.prev,to}:null;
+      p.nextMove=nextMoveFor(p);
     }else if(obstacle?.id==='stop-sign'){
       clearObstacle(nx);
       if(p.h)await ban(portrait(p),p.css,'STOP','Tanda berhenti mengakhiri langkahmu',900);

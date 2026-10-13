@@ -118,7 +118,7 @@ export function setB(i){
   const l=L[i];
   if(l.b){scene.remove(l.b);disposePropertyModel(l.b);l.b=null}
   if(!l.lv)return;
-  const large=l.s==2,building=createPropertyModel(l.lv,large,large?3.6:1.55);
+  const large=l.s==2,building=createPropertyModel(l.lv,large,large?3.8:1.9);
   if(!building)return;
   building.rotation.y=l.frontYaw;
   building.position.x+=l.lx;building.position.y+=.16;building.position.z+=l.lz;
