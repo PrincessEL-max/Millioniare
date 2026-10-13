@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="id"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI Pack</title>
+<style>
+body{margin:0;background:#dfe6ec;font-family:system-ui,sans-serif;color:#2a3340}
+.wrap{max-width:960px;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:24px}
+#bal{align-self:flex-start;background:#fff9;padding:6px 12px;border-radius:14px;font-weight:600}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#222c;color:#fff;padding:8px 16px;border-radius:16px;opacity:0;transition:opacity .2s}
+</style></head><body>
+<div class="wrap">
+  <div id="card"></div>
+  <div id="bal"></div>
+  <div id="shop"></div>
+</div>
+<div id="toast"></div>
+<script type="module">
+import {createPropertyCard} from './js/property-card.js';
+import {createShopPanel} from './js/shop-panel.js';
+import {ITEMS} from './js/items.js';
+
+let money=300;
+const bal=()=>document.getElementById('bal').textContent='Saldo: $'+money;
+const toast=t=>{const e=document.getElementById('toast');e.textContent=t;e.style.opacity=1;clearTimeout(toast.t);toast.t=setTimeout(()=>e.style.opacity=0,1400)};
+bal();
+
+createPropertyCard(document.getElementById('card'),{name:'Swanston  st',cost:200,rent:50,onClose(){toast('Kartu ditutup')}});
+
+createShopPanel(document.getElementById('shop'),{
+  items:ITEMS,
+  onBuy(item){                                   // return false = gagal beli (bunyi "bzzt")
+    if(money<item.price){toast('Uang tidak cukup');return false}
+    money-=item.price;bal();toast('Dibeli: '+item.name);
+  }
+});
+</script></body></html>

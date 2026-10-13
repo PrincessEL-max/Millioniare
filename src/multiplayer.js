@@ -1,9 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 
-const EVENTS=['join','room-ready','game-start','state','roll-request','prompt','answer','bank-request','bank-result','bank-withdraw-request','bank-withdraw-result'];
+const EVENTS=['join','room-ready','game-start','state','progress','dice-roll','roll-request','prompt','answer','bank-request','bank-result','bank-withdraw-request','bank-withdraw-result','item-use-request','item-use-result'];
 let client,channel,role='offline',roomCode='',peerId='',selfId=crypto.randomUUID();
 let handlers={},guestResolver,startResolver,rollResolver,roomReadyResolver,guestConnected=false,guestReady=false,lastGameStart;
-const answers=new Map(),bankRequests=new Map(),withdrawRequests=new Map();
+const answers=new Map(),bankRequests=new Map(),withdrawRequests=new Map(),itemUseRequests=new Map();
 
 export const isOnline=()=>role!=='offline';
 export const isHost=()=>role==='host';
@@ -54,14 +54,20 @@ function handleEvent(event,payload){
       if(event==='answer'){const resolve=answers.get(payload.id);if(resolve){answers.delete(payload.id);resolve(!!payload.value)}}
       if(event==='bank-request')Promise.resolve(handlers.onBankRequest?.(payload)).catch(error=>handlers.onError?.(error));
       if(event==='bank-withdraw-result'){const resolve=withdrawRequests.get(payload.id);if(resolve){withdrawRequests.delete(payload.id);resolve(payload.amount)}}
+      if(event==='item-use-request')Promise.resolve(handlers.onItemUseRequest?.(payload)).then(accepted=>
+        broadcast('item-use-result',{clientId:peerId,id:payload.id,accepted:!!accepted})
+      ).catch(error=>handlers.onError?.(error));
     }
   }else if(role==='guest'){
     if(event==='room-ready'&&payload.clientId===selfId){handlers.onRoomReady?.();roomReadyResolver?.();roomReadyResolver=null}
     else if(event==='game-start'){lastGameStart=payload;handlers.onGameStart?.(payload);startResolver?.(payload);startResolver=null}
     else if(event==='state'){guestReady=!!payload.awaitingRoll&&payload.cur===1;handlers.onState?.(payload)}
+    else if(event==='progress')handlers.onProgress?.(payload)
+    else if(event==='dice-roll')Promise.resolve(handlers.onDiceRoll?.(payload)).catch(error=>handlers.onError?.(error))
     else if(event==='prompt')handlers.onPrompt?.(payload);
     else if(event==='bank-result'){const resolve=bankRequests.get(payload.id);if(resolve){bankRequests.delete(payload.id);resolve(!!payload.accepted)}}
     else if(event==='bank-withdraw-request')handlers.onBankWithdraw?.(payload);
+    else if(event==='item-use-result'&&payload.clientId===selfId){const resolve=itemUseRequests.get(payload.id);if(resolve){itemUseRequests.delete(payload.id);resolve(!!payload.accepted)}}
   }
 }
 export async function createRoom(){
@@ -104,6 +110,12 @@ export function startOnlineGame(settings,state){
 export function sendState(state){
   if(isHost())return broadcast('state',state);
 }
+export function sendProgress(progress){
+  if(isHost())return broadcast('progress',progress);
+}
+export function sendDiceRoll(player,value){
+  if(isHost())return broadcast('dice-roll',{player,value});
+}
 export function waitForRemoteRoll(state){
   if(!isHost())return Promise.reject(new Error('Hanya host yang dapat menunggu giliran remote.'));
   if(!peerId)return Promise.reject(new Error('Pemain kedua terputus dari room.'));
@@ -117,12 +129,12 @@ export function sendRollRequest(){
   guestReady=false;
   return broadcast('roll-request',{clientId:selfId,player:1})
 }
-export function askRemote(title,body,yes,no){
+export function askRemote(title,body,yes,no,property){
   if(!isHost()||!peerId)return Promise.reject(new Error('Pemain kedua terputus dari room.'));
   const id=crypto.randomUUID();
   return new Promise((resolve,reject)=>{
     answers.set(id,resolve);
-    broadcast('prompt',{id,title,body,yes,no}).catch(error=>{answers.delete(id);reject(error)});
+    broadcast('prompt',{id,title,body,yes,no,property}).catch(error=>{answers.delete(id);reject(error)});
   })
 }
 export function answerRemote(id,value){
@@ -150,11 +162,21 @@ export function requestRemoteWithdrawal(max,cash){
 export function answerRemoteWithdrawal(id,amount){
   return broadcast('bank-withdraw-result',{clientId:selfId,id,amount})
 }
+export function requestRemoteItemUse(itemIndex,action){
+  if(!isGuest())return Promise.resolve(false);
+  const id=crypto.randomUUID(),wasReady=guestReady;guestReady=false;
+  return new Promise((resolve,reject)=>{
+    itemUseRequests.set(id,accepted=>{if(!accepted)guestReady=wasReady;resolve(accepted)});
+    broadcast('item-use-request',{clientId:selfId,id,itemIndex,action}).catch(error=>{
+      itemUseRequests.delete(id);guestReady=wasReady;reject(error);
+    });
+  });
+}
 export async function leaveRoom(){
   const old=channel;channel=null;role='offline';peerId='';roomCode='';
   guestConnected=false;guestReady=false;lastGameStart=null;roomReadyResolver=null;
   const waitingGuest=guestResolver;guestResolver=null;waitingGuest?.(false);
-  answers.clear();bankRequests.clear();withdrawRequests.clear();rollResolver=null;guestResolver=null;startResolver=null;
+  answers.clear();bankRequests.clear();withdrawRequests.clear();itemUseRequests.clear();rollResolver=null;guestResolver=null;startResolver=null;
   if(old)await old.unsubscribe();
   if(client){client.removeAllChannels();client=null}
 }

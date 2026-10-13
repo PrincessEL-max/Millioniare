@@ -11,7 +11,7 @@ export const die=new THREE.Mesh(new THREE.BoxGeometry(.9,.9,.9),[1,6,2,5,3,4].ma
   const tex=new THREE.CanvasTexture(face(v,256));tex.encoding=THREE.sRGBEncoding;
   return new THREE.MeshLambertMaterial({map:tex})}));die.visible=false;scene.add(die);
 const H=Math.PI/2,ROT={1:[0,0,H],2:[0,0,0],3:[-H,0,0],4:[H,0,0],5:[Math.PI,0,0],6:[0,0,-H]};
-export async function rollDie(p){const v=rnd(1,6),[x,z]=tp(p.pos);die.visible=true;
+export async function rollDie(p,fixedValue=null,onValue=()=>{}){const v=fixedValue??rnd(1,6),[x,z]=tp(p.pos);onValue(v);die.visible=true;
   await tween(900,t=>{die.rotation.set(t*12,t*9,t*7);die.position.set(x+1.4,.5+Math.abs(Math.sin(t*Math.PI*2.2))*(1-t)*3,z+1.4)});
   die.rotation.set(...ROT[v]);die.position.set(x+1.4,.5,z+1.4);return v}
 $('dice').append(face(5));

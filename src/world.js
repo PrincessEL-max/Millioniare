@@ -2,16 +2,7 @@ import * as THREE from 'three';
 import { $, LOT_LARGE, LOT_SMALL, OWN, RENT_LARGE, RENT_SMALL, cvs, hex, mat, rnd } from './config.js';
 import { LINKS, MAP, START, T, TREES, tp } from './map.js';
 import { renderer, scene } from './scene.js';
-import { createHouse1 } from '../house/house1.js';
-import { createHouse2 } from '../house/house2.js';
-import { createHouse3 } from '../house/house3.js';
-import { createHouse4 } from '../house/house4.js';
-import { createHouse5 } from '../house/house5.js';
-import { createHotel } from '../hotel/hotel.js';
-import { createHotel2 } from '../hotel/hotel2.js';
-import { createHotel3 } from '../hotel/hotel3.js';
-import { createHotel4 } from '../hotel/hotel4.js';
-import { createHotel5 } from '../hotel/hotel5.js';
+import { createPropertyModel, disposePropertyModel } from '../ui/property-model.js';
 
 // ---------- jalan & lot ----------
 const ICONS={'pad-20':'coin-20.png','pad-50':'coin-50.png','pad-100':'coin-100.png',bus:'bus.png',bank:'bank.png',star:'star.png'};
@@ -52,6 +43,7 @@ function roadTex(arms){const c=cvs(512),g=c.getContext('2d');g.scale(4,4);g.fill
   for(const d of remaining){g.beginPath();g.moveTo(...ends[d]);g.lineTo(64,64);g.stroke()}
   return canvasTex(c)}
 export const L=[];
+export const LOT_TARGET_MESHES=[];
 const lotStates=new Map();
 const frontageByLot=new Map();
 for(const tile of MAP)if(tile.lot){
@@ -89,7 +81,11 @@ T.forEach((t,i)=>{const [x,z]=tp(i),M=MAP[i],q=M.p,neighbors=LINKS[i].map(j=>MAP
     rail(0,-w/2+rim/2,w,rim);rail(0,w/2-rim/2,w,rim);
     rail(-w/2+rim/2,0,rim,w);rail(w/2-rim/2,0,rim,w);
     const plot=new THREE.Mesh(new THREE.BoxGeometry(inset,.01,inset),[floorSide,floorSide,floorTop,floorSide,floorSide,floorSide]);
-    plot.position.set(lx,.105,lz);scene.add(plot);
+    plot.position.set(lx,.105,lz);plot.userData.targetTile=i;scene.add(plot);LOT_TARGET_MESHES.push(plot);
+    const target=new THREE.Mesh(new THREE.PlaneGeometry(w-.12,w-.12),new THREE.MeshBasicMaterial({
+      colorWrite:false,depthWrite:false,side:THREE.DoubleSide
+    }));
+    target.rotation.x=-Math.PI/2;target.position.set(lx,.19,lz);target.userData.targetTile=i;scene.add(target);LOT_TARGET_MESHES.push(target);
     const state={o:-1,lv:0,c,tex,lx,lz,sz:lt.s==2?1.7:1,b:null,s:lt.s,frontYaw:lotFacing(lt),group:lt.group,mesh:m,frame:lotFrame(w,lx,lz),
       price:lt.s==2?LOT_LARGE:LOT_SMALL,rent:lt.s==2?RENT_LARGE:RENT_SMALL,id:lt.id};
     lotStates.set(lt.id,state);L[i]=state;
@@ -118,39 +114,13 @@ function winTex(col,rep){const c=cvs(128),g=c.getContext('2d');g.scale(4,4);g.fi
   for(let y=4;y<32;y+=16)for(let x=4;x<32;x+=16)g.fillRect(x,y,8,8);
   const t=canvasTex(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(1,rep);return new THREE.MeshLambertMaterial({map:t})}
 const tower=(w,h,c)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,w),winTex(c,Math.max(1,Math.round(h*1.4))));m.position.y=h/2;return m};
-const HOUSE_MODELS=[createHouse1,createHouse2,createHouse3,createHouse4,createHouse5];
-const HOTEL_MODELS=[createHotel,createHotel2,createHotel3,createHotel4,createHotel5];
-function visibleBounds(root){
-  const bounds=new THREE.Box3(),box=new THREE.Box3();
-  root.updateMatrixWorld(true);
-  root.traverse(object=>{
-    if(!object.isMesh)return;
-    for(let parent=object;parent&&parent!==root;parent=parent.parent)if(!parent.visible)return;
-    box.setFromObject(object);bounds.union(box);
-  });
-  return bounds;
-}
-function disposeBuilding(root){
-  root.traverse(object=>{
-    if(!object.isMesh)return;
-    object.geometry.dispose();
-    const materials=Array.isArray(object.material)?object.material:[object.material];
-    materials.forEach(material=>{
-      Object.values(material).forEach(value=>{if(value?.isTexture)value.dispose()});
-      material.dispose();
-    });
-  });
-}
 export function setB(i){
   const l=L[i];
-  if(l.b){scene.remove(l.b);disposeBuilding(l.b);l.b=null}
+  if(l.b){scene.remove(l.b);disposePropertyModel(l.b);l.b=null}
   if(!l.lv)return;
-  const large=l.s==2,create=large?HOTEL_MODELS[l.lv-1]:HOUSE_MODELS[l.lv-1];
-  const building=create({props:false}),bounds=visibleBounds(building),size=bounds.getSize(new THREE.Vector3()),center=bounds.getCenter(new THREE.Vector3());
-  const scale=(large?3.55:1.55)/Math.max(size.x,size.z);
-  building.scale.setScalar(scale);
+  const large=l.s==2,building=createPropertyModel(l.lv,large,large?3.6:1.55);
+  if(!building)return;
   building.rotation.y=l.frontYaw;
-  const centerOffset=new THREE.Vector3(center.x*scale,0,center.z*scale).applyAxisAngle(new THREE.Vector3(0,1,0),l.frontYaw);
-  building.position.set(l.lx-centerOffset.x,.16-bounds.min.y*scale,l.lz-centerOffset.z);
+  building.position.x+=l.lx;building.position.y+=.16;building.position.z+=l.lz;
   scene.add(building);l.b=building;
 }

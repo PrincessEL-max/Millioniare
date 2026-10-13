@@ -1,10 +1,16 @@
-import * as THREE from 'three';
-import { CASH0, cvs, hex, mat } from './config.js';
+import { CASH0, cvs, hex } from './config.js';
 import { tp } from './map.js';
 import { scene } from './scene.js';
 import { L, drawLot } from './world.js';
+import { createChibi } from '../Character/chibi.js';
+import { createChibiBoy } from '../Character/chibi-boy.js';
 
-export const OFF=[[-.75,-.5],[0,-.5],[.75,-.5],[-.75,.5],[0,.5],[.75,.5]];
+export const OFF=[-.03,-.018,-.006,.006,.018,.03];
+export function laneOffset(index,from,to){
+  const dx=to[0]-from[0],dz=to[1]-from[1],length=Math.hypot(dx,dz);
+  if(!length)return [0,0];
+  return [-dz/length*OFF[index],dx/length*OFF[index]];
+}
 // ---------- pemain ----------
 const STYLES=[
   {c:0xe53935,sk:0xf1d4b8,hr:0x5a3a22,af:1},
@@ -30,8 +36,12 @@ export function configurePlayers(next){
   P=STYLES.slice(0,total).map((style,i)=>{
     const p={...style,n:`Player ${i+1}`,i,h:i<settings.humanCount,
       css:hex(style.c),skc:hex(style.sk),hrc:hex(style.hr),pos:-1,prev:null,
-      cash:settings.cash,bank:settings.bank,alive:true,inv:[]};
-    p.m=mk(p,total>3?.78:1.15);scene.add(p.m);place(p);return p;
+      cash:settings.cash,bank:settings.bank,alive:true,inv:[],hospitalTurns:0,nextRoll:null,nextMove:null};
+    const scale=total>3?.38:.42;
+    p.m=i%2===0
+      ?createChibi({hair:style.hr,skin:style.sk,sweater:style.c})
+      :createChibiBoy({outfit:i%4===1?'hoodie':'uniform',hair:style.hr,skin:style.sk,top:style.c});
+    p.m.scale.setScalar(scale);scene.add(p.m);place(p);return p;
   });
 }
 export function portrait(p){const c=cvs(96),g=c.getContext('2d'),e=(x,y,a,b,f)=>{g.beginPath();g.ellipse(x,y,a,b,0,0,Math.PI*2);g.fillStyle=f;g.fill()};
@@ -43,12 +53,9 @@ export function portrait(p){const c=cvs(96),g=c.getContext('2d'),e=(x,y,a,b,f)=>
   if(p.bd){g.fillStyle=p.hrc;g.beginPath();g.ellipse(48,72,23,16,0,0,Math.PI);g.fill()}
   g.strokeStyle='#d98a74';g.lineWidth=3;g.beginPath();g.moveTo(41,76);g.lineTo(55,76);g.stroke();
   c.style.cssText='width:62px;height:62px;border-radius:12px;display:block';return c}
-function mk(p,scale=1.15){const g=new THREE.Group(),b=new THREE.Mesh(new THREE.BoxGeometry(.5,.55,.35),mat(p.c));b.position.y=.65;
-  const lg=[-.12,.12].map(x=>{const m=new THREE.Mesh(new THREE.BoxGeometry(.18,.4,.2),mat(0x2a3f8a));m.position.set(x,.22,0);return m});
-  const hd=new THREE.Mesh(new THREE.SphereGeometry(.4,32,24),mat(p.sk));hd.position.y=1.3;
-  const hr=new THREE.Mesh(new THREE.SphereGeometry(p.af?.52:.43,32,20,0,7,0,1.6),mat(p.hr));hr.position.y=p.af?1.38:1.34;
-  const ey=[-.15,.15].map(x=>{const m=new THREE.Mesh(new THREE.SphereGeometry(.05,16,12),mat(0x111111));m.position.set(x,1.25,.37);return m});
-  g.add(b,...lg,hd,hr,...ey);g.rotation.y=Math.PI/4;g.scale.setScalar(scale);return g}
-export const place=p=>{const [x,z]=tp(p.pos),offset=OFF[p.i];p.m.position.set(x+offset[0],.02,z+offset[1])};
+export const place=p=>{
+  const [x,z]=tp(p.pos),from=Number.isInteger(p.prev)&&p.prev>=0?tp(p.prev):[x,z-2],offset=laneOffset(p.i,from,[x,z]);
+  p.m.position.set(x+offset[0],.02,z+offset[1]);
+};
 configurePlayers(settings);
 L.forEach((l,i)=>drawLot(i));

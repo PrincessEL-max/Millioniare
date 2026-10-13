@@ -1,0 +1,11 @@
+import * as THREE from 'three';
+
+// Fungsi bantu bersama untuk semua item 3D (material, extrude rounded-rect, batang antar dua titik, tekstur kanvas, bintang).
+export const _M = (c, x) => new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: 0.45, metalness: 0 }, x || {}));
+export const _G = (c, x) => new THREE.MeshPhysicalMaterial(Object.assign({ color: c, roughness: 0.35, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.15 }, x || {}));
+export function _add(g, m, x, y, z, p) { const s = new THREE.Mesh(g, m); s.position.set(x, y, z); s.castShadow = true; p.add(s); return s; }
+export function _rrect(w, d, r) { const s = new THREE.Shape(), x = -w / 2, y = -d / 2; s.moveTo(x + r, y); s.lineTo(x + w - r, y); s.quadraticCurveTo(x + w, y, x + w, y + r); s.lineTo(x + w, y + d - r); s.quadraticCurveTo(x + w, y + d, x + w - r, y + d); s.lineTo(x + r, y + d); s.quadraticCurveTo(x, y + d, x, y + d - r); s.lineTo(x, y + r); s.quadraticCurveTo(x, y, x + r, y); return s; }
+export function _ext(shape, depth, bevel, mat) { const g = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 3, curveSegments: 16 }); g.translate(0, 0, -depth / 2); const m = new THREE.Mesh(g, mat); m.castShadow = true; return m; }
+export function _rod(a, b, r, mat, p) { const d = new THREE.Vector3().subVectors(b, a), m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, d.length(), 8), mat); m.position.copy(a).addScaledVector(d, 0.5); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()); m.castShadow = true; p.add(m); return m; }
+export function _canvasTex(w, h, draw, rx = 1, ry = 1) { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rx, ry); t.encoding = THREE.sRGBEncoding; return t; }
+export function _star(n, ro, ri) { const s = new THREE.Shape(); for (let i = 0; i < n * 2; i++) { const r = i % 2 ? ri : ro, a = i * Math.PI / n + Math.PI / 2; i ? s.lineTo(Math.cos(a) * r, Math.sin(a) * r) : s.moveTo(Math.cos(a) * r, Math.sin(a) * r); } s.closePath(); return s; }
