@@ -44,4 +44,5 @@ Komponen `ui/property-card.js` dipakai untuk pembelian lahan dan peningkatan rum
 - **For Rent** meminta konfirmasi untuk melelang lahan kosong atau lahan lawan. Harga awal sama dengan harga lahan ditambah biaya bangunan yang sudah dibangun; bid selanjutnya naik $100 sampai semua penawar selain penawar tertinggi pass.
 - **Remote Control** menampilkan dadu 2D yang dapat diklik untuk memilih angka 1–6; tekan **Go** untuk menyimpan hasil dadu berikutnya.
 - **Lawyer** otomatis mengambil alih lahan lawan saat pion berhenti di sana dan menampilkan model alat. **Thief** mencuri 25% uang tunai pemain lain, bukan saldo bank, dengan model lebih besar di dekat target.
+- Hewan peliharaan liar hanya dipungut jika pion mengakhiri gerakan tepat di petaknya; melintasi petak hewan tidak memungutnya.
 - Rintangan dapat dipasang lewat **Alat → pilih item → arahkan kursor ke petak jalan** untuk melihat pratinjau, lalu klik petak sasaran. Item lainnya dapat dipakai lewat **Alat → pilih item** sebelum dadu dilempar. Komputer memakai alat otomatis dengan pilihan sesuai kondisi permainan.

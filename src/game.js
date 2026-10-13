@@ -577,7 +577,6 @@ async function step(p,n){for(let k=0;k<n;k++){
     p.networkWalking=false;p.m.userData.setWalking(false);syncMovement(p,true);
     const obstacle=obstacles.get(nx);
     p.prev=p.pos;p.pos=nx;$('street').textContent=sn(nx);
-    await collectPet(p,nx);
     if(obstacle?.id==='street-sign'){
       p.forcedDirection=obstacle.dir;
       clearObstacle(nx);
@@ -781,7 +780,7 @@ async function main(){
       const v=await rollDie(p,fixed,value=>{
         sendDiceRoll(p.i,value)?.catch(error=>console.error('Online dice sync error:',error));
       });await ban(face(v),'#9fb0c2',String(v),'GO',900);
-      await step(p,v);die.visible=false;await land(p);check()}
+      await step(p,v);die.visible=false;await collectPet(p,p.pos);await land(p);check()}
     finishPetTurn(p);
     advancePetSpawner();
     if(isHost())await sendState(snapshot());
