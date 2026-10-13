@@ -16,11 +16,13 @@ export function propertyPreview(level,hotel){
   const key=new THREE.DirectionalLight(0xffffff,1.25);key.position.set(4,8,6);scene.add(key);
   const fill=new THREE.DirectionalLight(0x9dbbff,.4);fill.position.set(-5,4,-4);scene.add(fill);
   scene.add(model);
-  const bounds=new THREE.Box3().setFromObject(model);
   model.rotation.y=-.45;
+  model.updateMatrixWorld(true);
+  const bounds=new THREE.Box3().setFromObject(model);
   const size=bounds.getSize(new THREE.Vector3());
-  const frameHeight=Math.max(footprint,size.y/(1+.2*(level-1))*1.8)*1.3;
-  const aspect=500/400,halfHeight=frameHeight/2,halfWidth=halfHeight*aspect;
+  const aspect=500/400;
+  const frameHeight=Math.max(size.y,size.x/aspect,size.z/aspect,footprint/aspect)*1.3;
+  const halfHeight=frameHeight/2,halfWidth=halfHeight*aspect;
   const camera=new THREE.OrthographicCamera(-halfWidth,halfWidth,halfHeight,-halfHeight,.01,100);
   const focusY=size.y/2;
   camera.position.set(.8,.8,1).normalize().multiplyScalar(24).add(new THREE.Vector3(0,focusY,0));
