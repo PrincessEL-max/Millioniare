@@ -29,7 +29,9 @@ function addIcon(t,x,z){
     logo.rotation.x=-Math.PI/2;logo.position.set(x,.105,z);scene.add(logo);
   },undefined,error=>console.error(`Failed to load street icon: ${file}`,error));
 }
-function roadTex(arms){const c=cvs(512),g=c.getContext('2d');g.scale(4,4);g.fillStyle='#8c9097';g.fillRect(0,0,128,128);
+const roadTextures=new Map();
+function roadTex(arms){const key=[...arms].sort().join(''),existing=roadTextures.get(key);if(existing)return existing;
+  const c=cvs(512),g=c.getContext('2d');g.scale(4,4);g.fillStyle='#8c9097';g.fillRect(0,0,128,128);
   g.strokeStyle='#fff';g.lineWidth=7;g.setLineDash([20,18]);g.lineCap='butt';
   const ends={n:[64,0],e:[128,64],s:[64,128],w:[0,64]},remaining=new Set(arms);
   for(const [a,b] of [['n','s'],['e','w']])if(remaining.has(a)&&remaining.has(b)){
@@ -41,7 +43,7 @@ function roadTex(arms){const c=cvs(512),g=c.getContext('2d');g.scale(4,4);g.fill
     if(straight.length){g.beginPath();g.moveTo(...ends[straight[0]]);g.lineTo(...ends[straight[1]]);g.stroke();straight.forEach(d=>remaining.delete(d))}
   }
   for(const d of remaining){g.beginPath();g.moveTo(...ends[d]);g.lineTo(64,64);g.stroke()}
-  return canvasTex(c)}
+  const texture=canvasTex(c);roadTextures.set(key,texture);return texture}
 export const L=[];
 export const LOT_TARGET_MESHES=[];
 const lotStates=new Map();
@@ -67,9 +69,27 @@ export function drawLot(i){const l=L[i],g=l.c.getContext('2d');g.setTransform(4,
   g.beginPath();g.moveTo(64,6);g.lineTo(64,122);g.moveTo(6,64);g.lineTo(122,64);g.stroke();
   const ownerColors=['#e53935','#43a047','#1e88e5','#ff9800','#9c27b0','#00acc1'];
   l.tex.needsUpdate=true;l.frame.material.color.set(l.o<0?'#f7dea0':ownerColors[l.o])}
-T.forEach((t,i)=>{const [x,z]=tp(i),M=MAP[i],q=M.p,neighbors=LINKS[i].map(j=>MAP[j]).filter(Boolean);
-  const arms=[];for(const n of neighbors){const dx=n.p[0]-q[0],dz=n.p[1]-q[1];arms.push(dx<0?'w':dx>0?'e':dz<0?'n':'s')}
-  const r=new THREE.Mesh(new THREE.PlaneGeometry(2,2),new THREE.MeshBasicMaterial({map:roadTex(arms)}));r.rotation.x=-Math.PI/2;r.position.set(x,.02,z);scene.add(r);
+const roadGroups=new Map();
+T.forEach((_,i)=>{
+  const q=MAP[i].p,arms=LINKS[i].map(j=>{
+    const neighbor=MAP[j],dx=neighbor.p[0]-q[0],dz=neighbor.p[1]-q[1];
+    return dx<0?'w':dx>0?'e':dz<0?'n':'s';
+  }),key=[...arms].sort().join('');
+  let group=roadGroups.get(key);
+  if(!group){group={arms,positions:[]};roadGroups.set(key,group)}
+  group.positions.push(tp(i));
+});
+const roadTransform=new THREE.Object3D();
+roadGroups.forEach(({arms,positions})=>{
+  const roads=new THREE.InstancedMesh(new THREE.PlaneGeometry(2,2),
+    new THREE.MeshBasicMaterial({map:roadTex(arms)}),positions.length);
+  positions.forEach(([x,z],i)=>{
+    roadTransform.position.set(x,.02,z);roadTransform.rotation.set(-Math.PI/2,0,0);
+    roadTransform.updateMatrix();roads.setMatrixAt(i,roadTransform.matrix);
+  });
+  roads.instanceMatrix.needsUpdate=true;scene.add(roads);
+});
+T.forEach((t,i)=>{const [x,z]=tp(i),M=MAP[i];
   if(t[1]=='l'){const lt=M.lot,existing=lotStates.get(lt.id);
     if(existing){L[i]=existing;return}
     const w=lt.s==2?4:2,lx=lt.x*2,lz=lt.z*2,c=cvs(512),tex=canvasTex(c);

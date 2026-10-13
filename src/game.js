@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { SkeletonUtils } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { $, BN, BUILD, HOTEL, RENT, sleep, tween } from './config.js';
 import { directedNeighbor, LINKS, MAP, T, nextPos, sn, tp } from './map.js';
-import { cam, panOffset, renderer, scene } from './scene.js';
+import { cameraOffset, cam, panOffset, renderer, scene } from './scene.js';
 import { L, LOT_TARGET_MESHES, drawLot, flashLot, setB } from './world.js';
 import { configurePlayers, laneOffset, P, place, portrait } from './players.js';
 import { die, face, rollDie } from './dice.js';
@@ -56,8 +56,8 @@ const complexRent=(target,owner)=>
 const obstacles=new Map(),mapIndex=new Map(MAP.map((tile,index)=>[tile.p.join(','),index]));
 let focusOverride=null;
 const STREET_SIGN_DIRS={
-  'street-sign-front':'front','street-sign-right':'right',
-  'street-sign-back':'back','street-sign-left':'left','street-sign':'front'
+  'street-sign-front':'back','street-sign-right':'right',
+  'street-sign-back':'front','street-sign-left':'left','street-sign':'back'
 };
 const isStreetSign=id=>Object.prototype.hasOwnProperty.call(STREET_SIGN_DIRS,id);
 function createPetVisual(kind,height){
@@ -240,7 +240,7 @@ function isPathTile(tile){return Number.isInteger(tile)&&tile>=0&&tile<T.length}
 function nextMoveFor(p){
   const direction=p.forcedDirection||(obstacles.get(p.pos)?.id==='street-sign'
     ?obstacles.get(p.pos).dir:null);
-  const directed=direction?directedNeighbor(p.pos,p.prev,direction):null;
+  const directed=direction?directedNeighbor(p.pos,direction):null;
   if(Number.isInteger(directed))return {from:p.pos,prev:p.prev,to:directed,forced:!!p.forcedDirection};
   if(p.forcedDirection)p.forcedDirection=null;
   const to=nextPos(p.pos,p.prev);
@@ -272,7 +272,7 @@ async function chooseToolTarget(p,id,message){
   const candidates=MAP.map((_,tile)=>tile).filter(tile=>allowedTargetFor(tile,id,p));
   if(id==='broom')return candidates.filter(tile=>obstacles.has(tile)).sort((a,b)=>Math.abs(a-p.pos)-Math.abs(b-p.pos))[0]??null;
   if(id==='demolition')return candidates.filter(tile=>L[tile].o>=0&&L[tile].o!==p.i).sort((a,b)=>(L[b].lv-L[a].lv))[0]??null;
-  if(id==='for-rent')return candidates.filter(tile=>L[tile].o!==p.i).sort((a,b)=>(L[b].rent-L[a].rent))[0]??null;
+  if(id==='for-rent')return candidates.sort((a,b)=>(L[b].rent-L[a].rent))[0]??null;
   if(id==='bomb'||isStreetSign(id)||id==='stop-sign')return candidates[Math.floor(Math.random()*candidates.length)]??null;
   return candidates[0]??null;
 }
@@ -280,7 +280,7 @@ function allowedTargetFor(tile,id,p){
   const lot=L[tile];
   if(id==='broom')return isPathTile(tile);
   if(id==='demolition')return !!lot;
-  if(id==='for-rent')return !!lot&&lot.o!==p.i;
+  if(id==='for-rent')return !!lot;
   if(id==='lawyer')return tile===p.pos&&!!lot&&lot.o>=0&&lot.o!==p.i;
   return isPathTile(tile);
 }
@@ -384,15 +384,15 @@ async function collectGuestAction(p,item){
   }
   const messages={
     bomb:'Klik petak jalan tempat bom akan dipasang.',
-    'street-sign-front':'Klik petak jalan tempat rambu maju akan dipasang.',
+    'street-sign-front':'Klik petak jalan tempat rambu ↑ atas akan dipasang.',
     'street-sign-right':'Klik petak jalan tempat rambu kanan akan dipasang.',
-    'street-sign-back':'Klik petak jalan tempat rambu mundur akan dipasang.',
+    'street-sign-back':'Klik petak jalan tempat rambu ↓ bawah akan dipasang.',
     'street-sign-left':'Klik petak jalan tempat rambu kiri akan dipasang.',
     'street-sign':'Klik petak jalan tempat rambu akan dipasang.',
     'stop-sign':'Klik petak jalan tempat pemain akan dipaksa berhenti.',
     broom:'Arahkan ke petak jalan yang akan disapu.',
     demolition:'Klik lahan mana pun yang akan dihancurkan.',
-    'for-rent':'Klik lahan kosong atau lahan milik lawan yang akan dilelang.',
+    'for-rent':'Klik petak lahan mana pun untuk memulai lelang.',
     lawyer:'Klik lahan lawan tempat pionmu sedang berdiri.',
   };
   const tile=await chooseToolTarget(p,item.id,messages[item.id]||'Pilih petak sasaran.');
@@ -403,7 +403,7 @@ async function collectGuestAction(p,item){
   }
   if(item.id==='for-rent'){
     const lot=L[tile];
-    if(!lot||lot.o===p.i)return null;
+    if(!lot)return null;
     const startingBid=lot.price+BUILD.slice(1,lot.lv+1).reduce((sum,cost)=>sum+cost,0);
     if(!await confirmToolTarget(p,'Lelang '+lot.id,`Harga awal: $${startingBid}<br>Kenaikan tawaran: $100`))return null;
     return {tile,confirm:true};
@@ -472,15 +472,15 @@ async function useItem(p,index,action){
   }else{
     const messages={
       bomb:'Klik petak jalan tempat bom akan dipasang.',
-      'street-sign-front':'Klik petak jalan tempat rambu maju akan dipasang.',
+      'street-sign-front':'Klik petak jalan tempat rambu ↑ atas akan dipasang.',
       'street-sign-right':'Klik petak jalan tempat rambu kanan akan dipasang.',
-      'street-sign-back':'Klik petak jalan tempat rambu mundur akan dipasang.',
+      'street-sign-back':'Klik petak jalan tempat rambu ↓ bawah akan dipasang.',
       'street-sign-left':'Klik petak jalan tempat rambu kiri akan dipasang.',
       'street-sign':'Klik petak jalan tempat rambu akan dipasang.',
       'stop-sign':'Klik petak jalan tempat pemain akan dipaksa berhenti.',
       broom:'Klik petak berisi rintangan yang ingin dibersihkan.',
       demolition:'Klik lahan mana pun yang akan dihancurkan.',
-      'for-rent':'Klik lahan yang akan dilelang.',
+      'for-rent':'Klik petak lahan mana pun untuk memulai lelang.',
       lawyer:'Klik lahan lawan tempat pionmu sedang berdiri.'
     };
     const tile=action?.tile??await chooseToolTarget(p,item.id,messages[item.id]||'Pilih petak sasaran.');
@@ -507,7 +507,7 @@ async function useItem(p,index,action){
       }else await ban(portrait(p),p.css,'DEMOLITION','Lahan kosong, tidak ada bangunan.',1000);
     }else if(item.id==='for-rent'){
       if(action?.confirm!==true)return false;
-      const lot=L[tile];if(!lot||lot.o===p.i)return false;
+      const lot=L[tile];if(!lot)return false;
       used=true;await showToolModel(item.id,p);await runAuction(p,tile);
     }
   }
@@ -528,6 +528,8 @@ function tileAtPointer(event){
   return mapIndex.get(`${Math.round(point.x/2)},${Math.round(point.z/2)}`);
 }
 canvas.addEventListener('pointerdown',event=>{
+  if(event.button!==0)return;
+  if(event.pointerType==='touch'&&!event.isPrimary){targetPointer=null;return}
   targetPointer={id:event.pointerId,x:event.clientX,y:event.clientY};
   previewBoardTarget(tileAtPointer(event));
 });
@@ -700,7 +702,7 @@ function waveForTurn(p){
 }
 function check(){const al=P.filter(p=>p.alive),w=al.length==1?al[0]:0;
   if(w){G.over=true;hud();ask(portrait(w),'🏆 '+w.n+' menang!','Aset $'+nw(w),'🔁',0,24).then(()=>location.reload())}}
-const foc=new THREE.Vector3().copy(P[0].m.position),OC=new THREE.Vector3(12,8.5,12),target=new THREE.Vector3();
+const foc=new THREE.Vector3().copy(P[0].m.position),target=new THREE.Vector3();
 let lastProgressAt=0;
 let lastPetFrame=performance.now();
 function syncMovement(p,force=false){
@@ -711,7 +713,7 @@ function syncMovement(p,force=false){
   sendProgress({player:p.i,x:p.m.position.x,y:p.m.position.y,z:p.m.position.z,rotation:p.m.rotation.y,walking:!!p.networkWalking})
     ?.catch(error=>console.error('Online movement sync error:',error));
 }
-(function loop(){const now=performance.now(),delta=Math.min((now-lastPetFrame)/1000,.1);lastPetFrame=now;if(isGuest())P.forEach(p=>{if(p.networkTarget){p.m.position.lerp(p.networkTarget,.32);const turn=Math.atan2(Math.sin(p.networkRotation-p.m.rotation.y),Math.cos(p.networkRotation-p.m.rotation.y));p.m.rotation.y+=turn*.32}});foc.lerp(focusOverride||P[G.cur].m.position,.07);target.copy(foc).add(panOffset);cam.position.copy(target).add(OC);cam.lookAt(target);P.forEach(p=>p.m.userData.update?.(now));L.forEach(l=>l?.b?.userData.update?.(now));obstacles.forEach(item=>item.model.userData.update?.(now));petVisuals.forEach(visual=>visual.mixer.update(delta));renderer.render(scene,cam);requestAnimationFrame(loop)})();
+(function loop(){const now=performance.now(),delta=Math.min((now-lastPetFrame)/1000,.1);lastPetFrame=now;if(isGuest())P.forEach(p=>{if(p.networkTarget){p.m.position.lerp(p.networkTarget,.32);const turn=Math.atan2(Math.sin(p.networkRotation-p.m.rotation.y),Math.cos(p.networkRotation-p.m.rotation.y));p.m.rotation.y+=turn*.32}});foc.lerp(focusOverride||P[G.cur].m.position,.07);target.copy(foc).add(panOffset);cam.position.copy(target).add(cameraOffset);cam.lookAt(target);P.forEach(p=>p.m.userData.update?.(now));L.forEach(l=>l?.b?.userData.update?.(now));obstacles.forEach(item=>item.model.userData.update?.(now));petVisuals.forEach(visual=>visual.mixer.update(delta));renderer.render(scene,cam);requestAnimationFrame(loop)})();
 setNetworkHandlers({
   onState:state=>{try{applySnapshot(state)}catch(error){console.error(error)}},
   onProgress:progress=>{

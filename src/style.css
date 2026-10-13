@@ -48,6 +48,7 @@ body{background:var(--bg);font-family:system-ui,-apple-system,"Segoe UI",Roboto,
 input[type=range]{width:100%}
 #street{position:absolute;z-index:2;left:0;right:92px;bottom:14px;text-align:center;font-size:30px;pointer-events:none}
 @media(max-width:520px){#street{font-size:22px}}
+#view-hint{display:none}
 #rotate{display:none}
 button{touch-action:manipulation}
 @media (orientation:portrait) and (max-width:900px){
@@ -81,4 +82,8 @@ button{touch-action:manipulation}
   #zoom button{width:38px;height:38px;border-radius:10px;font-size:22px}
   #zoom button:last-child{font-size:19px}
   #street{left:0;right:68px;bottom:max(8px,env(safe-area-inset-bottom));font-size:clamp(16px,4vh,22px)}
+}
+@media (orientation:landscape) and (max-width:1000px) and (pointer:coarse){
+  #view-hint{position:absolute;z-index:2;top:max(8px,env(safe-area-inset-top));right:72px;display:block;color:#fff;font-size:11px;font-weight:700;text-shadow:0 1px 3px #000;pointer-events:none}
+  #view-hint::after{content:"Geser dua jari untuk putar kamera"}
 }
