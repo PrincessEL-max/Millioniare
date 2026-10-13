@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="id"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pets Viewer</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#cfe3ff;font-family:system-ui,sans-serif}
+#ui{position:fixed;top:10px;left:10px;background:#fff9;padding:8px 10px;border-radius:10px;font-size:13px;line-height:1.6}
+button{border:0;border-radius:14px;padding:6px 14px;font-weight:600;margin-right:6px;cursor:pointer}
+</style></head><body>
+<div id="ui">Geser mouse = putar kamera<br><button id="idle">Diam</button><button id="move">Gerak</button></div>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+const scene=new THREE.Scene();scene.background=new THREE.Color(0xcfe3ff);
+scene.add(new THREE.HemisphereLight(0xffffff,0xb9a6d8,1.5));
+const sun=new THREE.DirectionalLight(0xffffff,2);sun.position.set(3,6,5);scene.add(sun);
+const camera=new THREE.PerspectiveCamera(36,innerWidth/innerHeight,.1,100);camera.position.set(0,2.2,7);
+const controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,.6,0);
+
+// "jalur": deretan petak, model berdiri di tengah petak (pivot model = pusat alas)
+const items=[['baby','Idle','Idle'],['cat_white','Idle','Idle'],['cat_black','Idle','Walk'],['santa','Idle','Run']];
+const mixers=[],acts=[];
+items.forEach(([name],i)=>{
+  const x=(i-1.5)*1.9;
+  const tile=new THREE.Mesh(new THREE.BoxGeometry(1.7,.14,1.7),new THREE.MeshStandardMaterial({color:i%2?0xf2e6bd:0xe6d6a2,roughness:.8}));
+  tile.position.set(x,-.07,0);scene.add(tile);
+  new GLTFLoader().load(`models/${name}.glb`,g=>{
+    const holder=new THREE.Group();holder.position.set(x,0,0);holder.add(g.scene);scene.add(holder);
+    const m=new THREE.AnimationMixer(g.scene);
+    const A={};g.animations.forEach(a=>A[a.name]=m.clipAction(a));
+    mixers.push(m);acts[i]={A,cur:null};play(i,items[i][1]);
+  });
+});
+function play(i,anim){
+  const o=acts[i];if(!o)return;const nx=o.A[anim];if(!nx||o.cur===nx)return;
+  nx.reset().fadeIn(.25).play();if(o.cur)o.cur.fadeOut(.25);o.cur=nx;
+}
+document.getElementById('idle').onclick=()=>items.forEach((it,i)=>play(i,it[1]));
+document.getElementById('move').onclick=()=>items.forEach((it,i)=>play(i,it[2]));
+
+const clock=new THREE.Clock();
+(function loop(){requestAnimationFrame(loop);const dt=clock.getDelta();mixers.forEach(m=>m.update(dt));controls.update();renderer.render(scene,camera)})();
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+</script></body></html>

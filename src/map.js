@@ -92,9 +92,8 @@ export const LINKS=Object.fromEntries(around.map((neighbors,i)=>[i,neighbors]));
 export function directedNeighbor(pos,prev,direction){
   const options=LINKS[pos]||[];
   if(!options.length)return null;
-  const current=MAP[pos].p,previous=Number.isInteger(prev)&&prev>=0?MAP[prev].p:START;
-  const dx=current[0]-previous[0],dz=current[1]-previous[1];
-  const vector={forward:[dx,dz],backward:[-dx,-dz],left:[dz,-dx],right:[-dz,dx]}[direction];
+  const current=MAP[pos].p;
+  const vector={left:[-1,0],right:[1,0],front:[0,1],back:[0,-1]}[direction];
   if(!vector)return null;
   return options.find(index=>MAP[index].p[0]-current[0]===vector[0]&&MAP[index].p[1]-current[1]===vector[1])??null;
 }

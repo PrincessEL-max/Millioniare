@@ -36,7 +36,7 @@ export function configurePlayers(next){
   P=STYLES.slice(0,total).map((style,i)=>{
     const p={...style,n:`Player ${i+1}`,i,h:i<settings.humanCount,
       css:hex(style.c),skc:hex(style.sk),hrc:hex(style.hr),pos:-1,prev:null,
-      cash:settings.cash,bank:settings.bank,alive:true,inv:[],hospitalTurns:0,nextRoll:null,nextMove:null};
+      cash:settings.cash,bank:settings.bank,alive:true,inv:[],hospitalTurns:0,nextRoll:null,nextMove:null,pet:null};
     const scale=total>3?.38:.42;
     p.m=i%2===0
       ?createChibi({hair:style.hr,skin:style.sk,sweater:style.c})

@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { SkeletonUtils } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { $, BN, BUILD, HOTEL, RENT, sleep, tween } from './config.js';
 import { directedNeighbor, LINKS, MAP, T, nextPos, sn, tp } from './map.js';
 import { cam, panOffset, renderer, scene } from './scene.js';
@@ -19,11 +21,36 @@ import { createItemJudge } from '../tools/item-judge.js';
 import { createItemRemote } from '../tools/item-remote.js';
 import { createItemThief } from '../tools/item-thief.js';
 import { showBankDialog } from '../Bank/bank-dialog.js';
+import babyUrl from '../pets-pack/models/baby.glb?url';
+import catBlackUrl from '../pets-pack/models/cat_black.glb?url';
+import catWhiteUrl from '../pets-pack/models/cat_white.glb?url';
+import santaUrl from '../pets-pack/models/santa.glb?url';
 
 // ---------- aturan ----------
 const ownedLots=()=>[...new Set(L)].filter(Boolean);
 const nw=p=>p.cash+p.bank+ownedLots().reduce((a,l)=>a+(l.o==p.i?l.price+BUILD.slice(0,l.lv+1).reduce((x,y)=>x+y,0):0),0);
 const propertyRent=(lot,level=lot.lv)=>Math.round(lot.rent*RENT[level]/RENT[0]);
+const PET_KINDS=['baby','cat-black','cat-white','santa'];
+const PET_MODELS={
+  baby:{url:babyUrl,name:'Bayi',animation:'Idle'},
+  'cat-black':{url:catBlackUrl,name:'Kucing hitam',animation:'Idle'},
+  'cat-white':{url:catWhiteUrl,name:'Kucing putih',animation:'Idle'},
+  santa:{url:santaUrl,name:'Santa',animation:'Idle'}
+};
+let petAssets=null,petAssetsReady=null;
+function ensurePetAssets(){
+  if(!petAssetsReady)petAssetsReady=Promise.all(Object.entries(PET_MODELS).map(async([kind,info])=>{
+    const gltf=await new GLTFLoader().loadAsync(info.url);
+    const clip=gltf.animations.find(animation=>animation.name===info.animation);
+    if(!clip)throw new Error(`Animasi ${info.animation} tidak ditemukan pada model ${info.name}.`);
+    return [kind,{scene:gltf.scene,clip}];
+  })).then(entries=>{
+    petAssets=new Map(entries);return petAssets;
+  });
+  return petAssetsReady;
+}
+const petTiles=new Map(),petVisuals=new Map();
+let turnsUntilPetSpawn=3+Math.floor(Math.random()*8);
 const complexRent=(target,owner)=>
   ownedLots().reduce((sum,lot)=>sum+(lot.group==target.group&&lot.o==owner?propertyRent(lot):0),0);
 const obstacles=new Map(),mapIndex=new Map(MAP.map((tile,index)=>[tile.p.join(','),index]));
@@ -33,6 +60,75 @@ const STREET_SIGN_DIRS={
   'street-sign-back':'back','street-sign-left':'left','street-sign':'front'
 };
 const isStreetSign=id=>Object.prototype.hasOwnProperty.call(STREET_SIGN_DIRS,id);
+function createPetVisual(kind,height){
+  const asset=petAssets?.get(kind);
+  if(!asset)throw new Error(`Model hewan ${kind} belum siap dimuat.`);
+  const model=SkeletonUtils.clone(asset.scene),bounds=new THREE.Box3().setFromObject(model);
+  const size=bounds.getSize(new THREE.Vector3()),scale=height/Math.max(size.y,.001);
+  model.scale.setScalar(scale);model.position.y=-bounds.min.y*scale;
+  const mixer=new THREE.AnimationMixer(model);mixer.clipAction(asset.clip).play();
+  return {model,mixer};
+}
+function removePetVisual(key){
+  const visual=petVisuals.get(key);if(!visual)return;
+  visual.group.parent?.remove(visual.group);
+  visual.mixer.stopAllAction();visual.mixer.uncacheRoot(visual.model);
+  petVisuals.delete(key);
+}
+function clearMapPet(tile){
+  const pet=petTiles.get(tile);if(!pet)return false;
+  removePetVisual(`tile:${tile}`);petTiles.delete(tile);return true;
+}
+function setPlayerPet(p,pet){
+  removePetVisual(`player:${p.i}`);
+  p.pet=validPet(pet)?{kind:pet.kind,turns:pet.turns,justCollected:pet.justCollected===true}:null;
+  if(!p.pet)return;
+  const {model,mixer}=createPetVisual(p.pet.kind,.95),group=new THREE.Group();
+  group.position.set(0,3.35,0);group.add(model);p.m.add(group);
+  petVisuals.set(`player:${p.i}`,{group,model,mixer});
+}
+function setMapPet(tile,kind){
+  if(!Number.isInteger(tile)||tile<0||tile>=MAP.length||!PET_KINDS.includes(kind)||
+    T[tile][1]!=='r'||petTiles.has(tile))return false;
+  const {model,mixer}=createPetVisual(kind,1.15),group=new THREE.Group(),[x,z]=tp(tile);
+  group.position.set(x,.035,z);group.add(model);scene.add(group);
+  petTiles.set(tile,{kind});petVisuals.set(`tile:${tile}`,{group,model,mixer});
+  return true;
+}
+function spawnRandomPet(){
+  if(petTiles.size>=3)return false;
+  const candidates=MAP.map((_,tile)=>tile).filter(tile=>
+    T[tile][1]==='r'&&!petTiles.has(tile)&&!obstacles.has(tile)&&
+    !P.some(p=>p.alive&&p.pos===tile)
+  );
+  if(!candidates.length)return false;
+  const tile=candidates[Math.floor(Math.random()*candidates.length)];
+  const kind=PET_KINDS[Math.floor(Math.random()*PET_KINDS.length)];
+  return setMapPet(tile,kind);
+}
+function advancePetSpawner(){
+  if(turnsUntilPetSpawn>0)turnsUntilPetSpawn--;
+  if(turnsUntilPetSpawn===0&&spawnRandomPet())
+    turnsUntilPetSpawn=3+Math.floor(Math.random()*8);
+}
+function finishPetTurn(p){
+  if(!p.pet)return;
+  if(p.pet.justCollected){p.pet.justCollected=false;return}
+  p.pet.turns--;
+  if(p.pet.turns<=0)setPlayerPet(p,null);
+}
+function petCost(p,amount,upgrade=false){
+  if(p.pet?.kind==='santa'&&upgrade)return 0;
+  const multiplier=p.pet?.kind==='cat-black'?2:p.pet?.kind==='cat-white' ? .5 : 1;
+  return Math.round(amount*multiplier);
+}
+async function collectPet(p,tile){
+  const found=petTiles.get(tile);if(!found)return;
+  clearMapPet(tile);
+  setPlayerPet(p,{kind:found.kind,turns:5,justCollected:true});
+  if(p.h)await ban(portrait(p),p.css,PET_MODELS[found.kind].name,
+    'Efek aktif selama 5 giliranmu.',1100);
+}
 const hospitalPosition=new THREE.Vector3(23.5,0,31);
 const hospitalExitTile=MAP.reduce((best,tile,index)=>{
   if(T[index][1]==='l'||T[index][1]==='bus'||T[index][1]==='bank')return best;
@@ -148,8 +244,7 @@ function forwardNeighbor(pos,prev){
 }
 function nextMoveFor(p){
   const direction=p.forcedDirection||(obstacles.get(p.pos)?.id==='street-sign'
-    ?obstacles.get(p.pos).dir==='front'?'forward':obstacles.get(p.pos).dir==='back'?'backward':obstacles.get(p.pos).dir
-    :null);
+    ?obstacles.get(p.pos).dir:null);
   const directed=direction?directedNeighbor(p.pos,p.prev,direction):null;
   if(Number.isInteger(directed))return {from:p.pos,prev:p.prev,to:directed,forced:!!p.forcedDirection};
   const to=p.forcedDirection
@@ -229,7 +324,7 @@ async function runAuction(p,tile){
 }
 function canUseToolkit(p){
   const lot=L[p.pos];
-  return lot?.o===p.i&&lot.lv<5?lot:null;
+  return p.pet?.kind!=='baby'&&lot?.o===p.i&&lot.lv<5?lot:null;
 }
 async function confirmToolkit(p,lot){
   const level=lot.lv+1,rent=propertyRent(lot,level),hotel=lot.s===2;
@@ -372,7 +467,9 @@ async function useItem(p,index,action){
     await ban(portrait(p),p.css,'THIEF',`Mencuri $${stolen} dari ${target.n}`,1100);
   }else if(item.id==='toolkit'){
     const lot=canUseToolkit(p);
-    if(!lot){if(p.h)await ban(portrait(p),p.css,'TOOLKIT','Berhenti di lahan milikmu yang masih bisa ditingkatkan.',1100);return false}
+    if(!lot){if(p.h)await ban(portrait(p),p.css,'TOOLKIT',p.pet?.kind==='baby'
+      ?'Bayi membuatmu tidak bisa meningkatkan bangunan.'
+      :'Berhenti di lahan milikmu yang masih bisa ditingkatkan.',1100);return false}
     const confirmed=action?.confirm??await confirmToolkit(p,lot);
     if(confirmed!==true)return false;
     const level=lot.lv+1;used=true;await showToolModel(item.id,p);
@@ -455,7 +552,7 @@ canvas.addEventListener('pointercancel',()=>{targetPointer=null});
 async function step(p,n){for(let k=0;k<n;k++){
     if(obstacles.get(p.pos)?.id==='street-sign'){
       const sign=obstacles.get(p.pos);
-      p.forcedDirection=sign.dir==='front'?'forward':sign.dir==='back'?'backward':sign.dir;
+      p.forcedDirection=sign.dir;
       clearObstacle(p.pos);p.nextMove=nextMoveFor(p);
     }
     const move=validNextMove(p.nextMove,p)?p.nextMove:nextMoveFor(p);
@@ -486,8 +583,9 @@ async function step(p,n){for(let k=0;k<n;k++){
     p.networkWalking=false;p.m.userData.setWalking(false);syncMovement(p,true);
     const obstacle=obstacles.get(nx);
     p.prev=p.pos;p.pos=nx;$('street').textContent=sn(nx);
+    await collectPet(p,nx);
     if(obstacle?.id==='street-sign'){
-      p.forcedDirection=obstacle.dir==='front'?'forward':obstacle.dir==='back'?'backward':obstacle.dir;
+      p.forcedDirection=obstacle.dir;
       clearObstacle(nx);
       p.nextMove=nextMoveFor(p);
     }else if(obstacle?.id==='stop-sign'){
@@ -518,20 +616,52 @@ async function land(p){const t=T[p.pos],l=L[p.pos];
   else if(t[1]=='l'){
     if(l.o>=0&&l.o!=p.i)await flashLot(p.pos);
     if(l.o<0){
-      if(p.cash>=l.price){const y=p.h?await buyPropertyDlg(p,t[0],l.price,propertyRent(l,0)):true;
-        if(y){p.cash-=l.price;l.o=p.i;drawLot(p.pos);hud();await sleep(300)}}
-      else if(p.h)await ban(portrait(p),p.css,t[0],'Uang kurang',1000)}
-    else if(l.o==p.i){const nx=l.lv+1;
-      if(l.lv<5&&p.cash>=BUILD[nx]){const rent=propertyRent(l,nx),y=p.h?await buyPropertyDlg(p,l.s==2?HOTEL[nx]:BN[nx],BUILD[nx],rent,{level:nx,hotel:l.s===2}):p.cash-BUILD[nx]>=200;
-        if(y){p.cash-=BUILD[nx];l.lv=nx;setB(p.pos);hud();await sleep(300)}}}
-    else{const o=P[l.o],r=complexRent(l,l.o);await ban(portrait(p),p.css,t[0],'RENT $'+r,1300);
-      if(pay(p,r,o)){hud();await ban(portrait(o),o.css,'RECEIVED','$'+r,1000)}else{hud();await ban(portrait(p),p.css,p.n,'BANGKRUT 💥',1400)}}}}
-const snapshot=(awaitingRoll=false)=>({cur:G.cur,awaitingRoll,players:P.map(p=>({pos:p.pos,prev:p.prev,nextMove:p.nextMove,cash:p.cash,bank:p.bank,alive:p.alive,inv:p.inv,hospitalTurns:p.hospitalTurns||0,nextRoll:p.nextRoll||null})),lots:L.map(l=>l&&({o:l.o,lv:l.lv})),obstacles:[...obstacles.values()].map(({tile,id,dir})=>({tile,id,dir}))});
-G.saveExtra=()=>({obstacles:[...obstacles.values()].map(({tile,id,dir})=>({tile,id,dir})),players:P.map(p=>({hospitalTurns:p.hospitalTurns||0,nextRoll:p.nextRoll||null}))});
+      if(p.pet?.kind==='baby'){
+        if(p.h)await ban(portrait(p),p.css,'BAYI','Kamu belum bisa membeli lahan.',950);
+      }else{
+        const cost=petCost(p,l.price);
+        if(p.cash>=cost){const y=p.h?await buyPropertyDlg(p,t[0],cost,propertyRent(l,0)):true;
+          if(y){p.cash-=cost;l.o=p.i;drawLot(p.pos);hud();await sleep(300)}}
+        else if(p.h)await ban(portrait(p),p.css,t[0],'Uang kurang',1000);
+      }
+    }
+    else if(l.o==p.i){
+      if(p.pet?.kind==='baby'){
+        if(p.h)await ban(portrait(p),p.css,'BAYI','Kamu belum bisa meningkatkan bangunan.',950);
+      }else{
+        const nx=l.lv+1,cost=petCost(p,BUILD[nx],true);
+        if(l.lv<5&&p.cash>=cost){const rent=propertyRent(l,nx),y=p.h?await buyPropertyDlg(p,l.s==2?HOTEL[nx]:BN[nx],cost,rent,{level:nx,hotel:l.s===2}):p.cash-cost>=200;
+          if(y){p.cash-=cost;l.lv=nx;setB(p.pos);hud();await sleep(300)}}
+      }
+    }else{
+      const o=P[l.o],r=petCost(p,complexRent(l,l.o));await ban(portrait(p),p.css,t[0],'RENT $'+r,1300);
+      if(pay(p,r,o)){hud();await ban(portrait(o),o.css,'RECEIVED','$'+r,1000)}else{hud();await ban(portrait(p),p.css,p.n,'BANGKRUT 💥',1400)}
+    }
+  }
+}
+const snapshot=(awaitingRoll=false)=>({
+  cur:G.cur,awaitingRoll,
+  players:P.map(p=>({pos:p.pos,prev:p.prev,nextMove:p.nextMove,cash:p.cash,bank:p.bank,alive:p.alive,
+    inv:p.inv,hospitalTurns:p.hospitalTurns||0,nextRoll:p.nextRoll||null,pet:p.pet?{...p.pet}:null})),
+  lots:L.map(l=>l&&({o:l.o,lv:l.lv})),
+  obstacles:[...obstacles.values()].map(({tile,id,dir})=>({tile,id,dir})),
+  pets:[...petTiles].map(([tile,{kind}])=>({tile,kind})),petSpawnCountdown:turnsUntilPetSpawn
+});
+G.saveExtra=()=>({
+  obstacles:[...obstacles.values()].map(({tile,id,dir})=>({tile,id,dir})),
+  pets:[...petTiles].map(([tile,{kind}])=>({tile,kind})),petSpawnCountdown:turnsUntilPetSpawn,
+  players:P.map(p=>({hospitalTurns:p.hospitalTurns||0,nextRoll:p.nextRoll||null}))
+});
 G.loadExtra=data=>{
   [...obstacles.keys()].forEach(clearObstacle);
-  if(!data||!Array.isArray(data.obstacles)||!Array.isArray(data.players)||data.players.length!==P.length)return;
+  [...petTiles.keys()].forEach(clearMapPet);
+  P.forEach(p=>setPlayerPet(p,validPet(p.pet)?{...p.pet}:null));
+  if(!data||!Array.isArray(data.obstacles)||!Array.isArray(data.players)||data.players.length!==P.length){
+    turnsUntilPetSpawn=3+Math.floor(Math.random()*8);return;
+  }
   data.obstacles.forEach(({tile,id,dir})=>{if(Number.isInteger(tile)&&tile>=0&&tile<MAP.length&&['bomb','street-sign','stop-sign'].includes(id))setObstacle(tile,{id,dir})});
+  if(Array.isArray(data.pets))data.pets.slice(0,3).forEach(({tile,kind})=>setMapPet(tile,kind));
+  turnsUntilPetSpawn=Number.isInteger(data.petSpawnCountdown)?Math.max(0,Math.min(10,data.petSpawnCountdown)):3+Math.floor(Math.random()*8);
   data.players.forEach((state,index)=>{
     P[index].hospitalTurns=Number.isInteger(state.hospitalTurns)?Math.max(0,state.hospitalTurns):0;
     P[index].nextRoll=Number.isInteger(state.nextRoll)&&state.nextRoll>=1&&state.nextRoll<=6?state.nextRoll:null;
@@ -540,6 +670,9 @@ G.loadExtra=data=>{
     if(P[index].hospitalTurns>0)placeAtHospital(P[index]);
   });
 };
+function validPet(pet){
+  return !!pet&&PET_KINDS.includes(pet.kind)&&Number.isInteger(pet.turns)&&pet.turns>=1&&pet.turns<=5;
+}
 function applySnapshot(state){
   if(!state||!Array.isArray(state.players)||state.players.length!==P.length||!Array.isArray(state.lots)||state.lots.length!==L.length||!Array.isArray(state.obstacles))
     throw new Error('Data permainan online tidak valid.');
@@ -547,6 +680,7 @@ function applySnapshot(state){
   G.cur=((state.cur%P.length)+P.length)%P.length;
   state.players.forEach((data,i)=>{
     Object.assign(P[i],data);P[i].hospitalTurns=data.hospitalTurns||0;
+    setPlayerPet(P[i],validPet(data.pet)?{...data.pet}:null);
     P[i].networkTarget=null;P[i].networkWalking=false;P[i].m.userData.setWalking(false);
     burnCharacter(P[i],P[i].hospitalTurns>0);
     P[i].m.visible=data.alive;
@@ -560,6 +694,9 @@ function applySnapshot(state){
   state.lots.forEach((data,i)=>{if(data&&L[i]){L[i].o=data.o;L[i].lv=data.lv;drawLot(i);setB(i)}});
   [...obstacles.keys()].forEach(clearObstacle);
   state.obstacles.forEach(({tile,id,dir})=>{if(Number.isInteger(tile)&&tile>=0&&tile<MAP.length&&['bomb','street-sign','stop-sign'].includes(id))setObstacle(tile,{id,dir})});
+  [...petTiles.keys()].forEach(clearMapPet);
+  if(Array.isArray(state.pets))state.pets.slice(0,3).forEach(({tile,kind})=>setMapPet(tile,kind));
+  turnsUntilPetSpawn=Number.isInteger(state.petSpawnCountdown)?Math.max(0,Math.min(10,state.petSpawnCountdown)):3+Math.floor(Math.random()*8);
   hud();$('street').textContent=sn(P[G.cur].pos);
 }
 function waveForTurn(p){
@@ -572,6 +709,7 @@ function check(){const al=P.filter(p=>p.alive),w=al.length==1?al[0]:0;
   if(w){G.over=true;hud();ask(portrait(w),'🏆 '+w.n+' menang!','Aset $'+nw(w),'🔁',0,24).then(()=>location.reload())}}
 const foc=new THREE.Vector3().copy(P[0].m.position),OC=new THREE.Vector3(12,8.5,12),target=new THREE.Vector3();
 let lastProgressAt=0;
+let lastPetFrame=performance.now();
 function syncMovement(p,force=false){
   if(!isHost())return;
   const now=performance.now();
@@ -580,7 +718,7 @@ function syncMovement(p,force=false){
   sendProgress({player:p.i,x:p.m.position.x,y:p.m.position.y,z:p.m.position.z,rotation:p.m.rotation.y,walking:!!p.networkWalking})
     ?.catch(error=>console.error('Online movement sync error:',error));
 }
-(function loop(){const now=performance.now();if(isGuest())P.forEach(p=>{if(p.networkTarget){p.m.position.lerp(p.networkTarget,.32);const turn=Math.atan2(Math.sin(p.networkRotation-p.m.rotation.y),Math.cos(p.networkRotation-p.m.rotation.y));p.m.rotation.y+=turn*.32}});foc.lerp(focusOverride||P[G.cur].m.position,.07);target.copy(foc).add(panOffset);cam.position.copy(target).add(OC);cam.lookAt(target);P.forEach(p=>p.m.userData.update?.(now));L.forEach(l=>l?.b?.userData.update?.(now));obstacles.forEach(item=>item.model.userData.update?.(now));renderer.render(scene,cam);requestAnimationFrame(loop)})();
+(function loop(){const now=performance.now(),delta=Math.min((now-lastPetFrame)/1000,.1);lastPetFrame=now;if(isGuest())P.forEach(p=>{if(p.networkTarget){p.m.position.lerp(p.networkTarget,.32);const turn=Math.atan2(Math.sin(p.networkRotation-p.m.rotation.y),Math.cos(p.networkRotation-p.m.rotation.y));p.m.rotation.y+=turn*.32}});foc.lerp(focusOverride||P[G.cur].m.position,.07);target.copy(foc).add(panOffset);cam.position.copy(target).add(OC);cam.lookAt(target);P.forEach(p=>p.m.userData.update?.(now));L.forEach(l=>l?.b?.userData.update?.(now));obstacles.forEach(item=>item.model.userData.update?.(now));petVisuals.forEach(visual=>visual.mixer.update(delta));renderer.render(scene,cam);requestAnimationFrame(loop)})();
 setNetworkHandlers({
   onState:state=>{try{applySnapshot(state)}catch(error){console.error(error)}},
   onProgress:progress=>{
@@ -634,7 +772,8 @@ async function main(){
       if(p.hospitalTurns===0){burnCharacter(p,false);p.m.visible=true;place(p);if(p.h)await ban(portrait(p),p.css,'KELUAR RS','Kamu kembali ke papan',900)}
     }else if(p.alive){$('street').textContent=sn(p.pos);
       if(p.h&&(!isOnline()||p.i===myPlayerIndex()))waveForTurn(p);
-      await ban(portrait(p),p.css,p.n,'Turn',1000);
+      const petStatus=p.pet?`${PET_MODELS[p.pet.kind].name}: ${p.pet.turns} giliran tersisa`:'Turn';
+      await ban(portrait(p),p.css,p.n,petStatus,1000);
       if(p.h){
         if(isHost()&&p.i!==myPlayerIndex())await waitForRemoteRoll(snapshot());
         else{G.idle=true;hud();await new Promise(r=>G.wake=r);G.idle=false;hud()}
@@ -648,12 +787,19 @@ async function main(){
       const v=await rollDie(p,fixed,value=>{
         sendDiceRoll(p.i,value)?.catch(error=>console.error('Online dice sync error:',error));
       });await ban(face(v),'#9fb0c2',String(v),'GO',900);
-      await step(p,v);die.visible=false;await land(p);
-      if(isHost())await sendState(snapshot());
-      check()}
+      await step(p,v);die.visible=false;await land(p);check()}
+    finishPetTurn(p);
+    advancePetSpawner();
+    if(isHost())await sendState(snapshot());
     G.cur=(G.cur+1)%P.length}}
 (async()=>{
   let mode=await chooseGameMode(),resumed=false;
+  try{await ensurePetAssets()}
+  catch(error){
+    console.error('Failed to load pet models:',error);
+    await ban(portrait(P[0]),P[0].css,'Model hewan gagal dimuat','Periksa aset hewan lalu muat ulang permainan.',1800);
+    return;
+  }
   let room;
   while(mode==='online'){
     room=await onlineLobby();
