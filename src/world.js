@@ -1,8 +1,22 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { BufferGeometryUtils } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { $, LOT_LARGE, LOT_SMALL, OWN, RENT_LARGE, RENT_SMALL, cvs, hex, mat, rnd } from './config.js';
-import { LINKS, MAP, START, T, TREES, tp } from './map.js';
-import { renderer, scene } from './scene.js';
+import { LINKS, MAP, MAP_ID, START, T, TREES, tp } from './map.js';
+import { renderer, scene, setWorldBounds } from './scene.js';
 import { createPropertyModel, disposePropertyModel } from '../ui/property-model.js';
+import monasUrl from '../landmarks-pack/models/monas.glb?url';
+import windmillUrl from '../landmarks-pack/models/windmill.glb?url';
+import pineTreeUrl from '../landmarks-pack/models/tree_pine.glb?url';
+import roundTreeUrl from '../landmarks-pack/models/tree_round.glb?url';
+import blossomTreeUrl from '../landmarks-pack/models/tree_blossom.glb?url';
+import palmTreeUrl from '../landmarks-pack/models/tree_palm.glb?url';
+import borobudurUrl from '../landmarks-pack/models/borobudur.glb?url';
+import volcanoUrl from '../landmarks-pack/models/volcano.glb?url';
+import prambananUrl from '../landmarks-pack/models/prambanan.glb?url';
+import tuguUrl from '../landmarks-pack/models/tugu.glb?url';
+import jamGadangUrl from '../landmarks-pack/models/jam_gadang.glb?url';
+import gedungSateUrl from '../landmarks-pack/models/gedung_sate.glb?url';
 
 // ---------- jalan & lot ----------
 const ICONS={'pad-20':'coin-20.png','pad-50':'coin-50.png','pad-100':'coin-100.png',bus:'bus.png',bank:'bank.png',star:'star.png'};
@@ -31,7 +45,8 @@ function addIcon(t,x,z){
 }
 const roadTextures=new Map();
 function roadTex(arms){const key=[...arms].sort().join(''),existing=roadTextures.get(key);if(existing)return existing;
-  const c=cvs(512),g=c.getContext('2d');g.scale(4,4);g.fillStyle='#8c9097';g.fillRect(0,0,128,128);
+  const c=cvs(512),g=c.getContext('2d');g.scale(4,4);
+  g.fillStyle='#8c9097';g.fillRect(0,0,128,128);
   g.strokeStyle='#fff';g.lineWidth=7;g.setLineDash([20,18]);g.lineCap='butt';
   const ends={n:[64,0],e:[128,64],s:[64,128],w:[0,64]},remaining=new Set(arms);
   for(const [a,b] of [['n','s'],['e','w']])if(remaining.has(a)&&remaining.has(b)){
@@ -48,6 +63,341 @@ export const L=[];
 export const LOT_TARGET_MESHES=[];
 const lotStates=new Map();
 const frontageByLot=new Map();
+const decorationLoader=new GLTFLoader();
+const decorationAnisotropy=renderer.capabilities.getMaxAnisotropy();
+let windmillRotor=null;
+const landmarkMixers=[];
+const templeEffects=[];
+const templeSparkleGeometry=new THREE.SphereGeometry(.11,8,8);
+const templeSparkleMaterial=new THREE.MeshBasicMaterial({
+  color:0xffd36b,transparent:true,opacity:.82,depthWrite:false
+});
+export const HOSPITAL_POSITION=Object.freeze({x:-4,z:29});
+const mapSixLandmarks=[
+  {id:'borobudur',url:borobudurUrl,x0:5,x1:8,z0:9,z1:12,height:6.75,footprintX:8,footprintZ:8,clearanceX:12.3,clearanceZ:12.3,trees:true,effect:true},
+  {id:'volcano',url:volcanoUrl,x0:5,x1:8,z0:17,z1:20,height:6.75,clearanceX:8,clearanceZ:8,trees:true,animation:'Erupt'},
+  {id:'prambanan',url:prambananUrl,x0:5,x1:8,z0:25,z1:28,height:6.75,footprintX:8,footprintZ:8,clearanceX:11,clearanceZ:8.3,trees:true,effect:true},
+  {id:'tugu',url:tuguUrl,x0:-2,x1:0,z0:-3,z1:-1,height:6.5,clearanceX:3.6,clearanceZ:4},
+  {id:'jamGadang',url:jamGadangUrl,x0:-2,x1:-1,z0:5,z1:8,height:6.5,clearanceX:3,clearanceZ:3,yaw:Math.PI/2,animation:'Clock'},
+  {id:'gedungSate',url:gedungSateUrl,x0:-3,x1:-1,z0:21,z1:24,height:6.5,footprintX:6,footprintZ:7.2,clearanceX:7,clearanceZ:8,yaw:Math.PI/2}
+].map(landmark=>({
+  ...landmark,
+  centerX:(landmark.x0+landmark.x1)*1,
+  centerZ:(landmark.z0+landmark.z1)*1,
+  minX:landmark.x0*2-1,
+  maxX:landmark.x1*2+1,
+  minZ:landmark.z0*2-1,
+  maxZ:landmark.z1*2+1
+}));
+const landmarkIdsByMap={
+  2:['tugu','jamGadang','borobudur'],
+  3:['tugu','jamGadang','borobudur','volcano','gedungSate'],
+  4:['tugu','jamGadang','borobudur'],
+  5:['tugu','jamGadang','borobudur','volcano','gedungSate','prambanan']
+};
+const activeLandmarks=MAP_ID===6?mapSixLandmarks:mapSixLandmarks.filter(landmark=>
+  landmarkIdsByMap[MAP_ID]?.includes(landmark.id)
+);
+export function mergeStaticMeshes(model,animations=[]){
+  const animatedNames=new Set();
+  animations.forEach(clip=>clip.tracks.forEach(track=>
+    animatedNames.add(THREE.PropertyBinding.parseTrackName(track.name).nodeName)
+  ));
+  const animatedObjects=new Set();
+  model.traverse(object=>{
+    if(animatedNames.has(object.name))animatedObjects.add(object);
+  });
+  model.updateMatrixWorld(true);
+  const rootInverse=new THREE.Matrix4().copy(model.matrixWorld).invert();
+  const batches=new Map(),sourceMeshes=[];
+  model.traverse(object=>{
+    for(let parent=object;parent&&parent!==model.parent;parent=parent.parent)
+      if(animatedObjects.has(parent))return;
+    if(!object.isMesh||object.isSkinnedMesh||object.isInstancedMesh||
+      Array.isArray(object.material)||Object.keys(object.geometry.morphAttributes).length)return;
+    const geometry=object.geometry.clone();
+    geometry.applyMatrix4(rootInverse.clone().multiply(object.matrixWorld));
+    const signature=[
+      Object.keys(geometry.attributes).sort().join(','),
+      geometry.index?'indexed':'unindexed'
+    ].join('|');
+    let materialBatches=batches.get(object.material);
+    if(!materialBatches){materialBatches=new Map();batches.set(object.material,materialBatches)}
+    if(!materialBatches.has(signature))materialBatches.set(signature,[]);
+    materialBatches.get(signature).push(geometry);
+    sourceMeshes.push(object);
+  });
+  const mergedMeshes=[];
+  batches.forEach((materialBatches,material)=>{
+    materialBatches.forEach(geometries=>{
+      const geometry=geometries.length===1?geometries[0]:
+        BufferGeometryUtils.mergeBufferGeometries(geometries);
+      if(!geometry)throw new Error(`Gagal menggabungkan geometri statis pada ${model.name||'dekorasi'}.`);
+      mergedMeshes.push(new THREE.Mesh(geometry,material));
+    });
+  });
+  sourceMeshes.forEach(mesh=>mesh.parent.remove(mesh));
+  const retainedGeometries=new Set();
+  model.traverse(object=>{if(object.isMesh)retainedGeometries.add(object.geometry)});
+  new Set(sourceMeshes.map(mesh=>mesh.geometry)).forEach(geometry=>{
+    if(!retainedGeometries.has(geometry))geometry.dispose();
+  });
+  mergedMeshes.forEach(mesh=>model.add(mesh));
+}
+function addTreeInstances(model,placements){
+  if(!placements.length)return;
+  model.updateMatrixWorld(true);
+  const bounds=new THREE.Box3().setFromObject(model),size=bounds.getSize(new THREE.Vector3());
+  if(size.y<=0)throw new Error('Model pohon tidak memiliki tinggi yang valid.');
+  const center=bounds.getCenter(new THREE.Vector3()),position=new THREE.Vector3();
+  const rotation=new THREE.Quaternion(),scaleVector=new THREE.Vector3(),matrix=new THREE.Matrix4();
+  const meshes=[];
+  model.traverse(object=>{if(object.isMesh)meshes.push(object)});
+  meshes.forEach(mesh=>{
+    const instances=new THREE.InstancedMesh(mesh.geometry,mesh.material,placements.length);
+    instances.frustumCulled=false;
+    placements.forEach(({x,z,height},index)=>{
+      const scale=height/size.y;
+      position.set(x-center.x*scale,-bounds.min.y*scale,z-center.z*scale);
+      scaleVector.setScalar(scale);
+      matrix.compose(position,rotation,scaleVector);
+      instances.setMatrixAt(index,matrix);
+    });
+    instances.instanceMatrix.needsUpdate=true;
+    scene.add(instances);
+  });
+}
+const fitDecoration=(model,height,x,z,baseY=0,yaw=0,footprint=null)=>{
+  model.rotation.y=yaw;
+  model.updateMatrixWorld(true);
+  const bounds=new THREE.Box3().setFromObject(model),size=bounds.getSize(new THREE.Vector3());
+  if(size.y<=0)throw new Error('Model dekorasi tidak memiliki tinggi yang valid.');
+  const scale=height/size.y;
+  let scaleX=scale,scaleZ=scale;
+  if(footprint){
+    const rotated=Math.abs(Math.sin(yaw))>.5;
+    const width=rotated?size.z:size.x,depth=rotated?size.x:size.z;
+    const fitX=Math.min(1,footprint.x/(width*scale));
+    const fitZ=Math.min(1,footprint.z/(depth*scale));
+    scaleX=scale*(rotated?fitZ:fitX);
+    scaleZ=scale*(rotated?fitX:fitZ);
+  }
+  model.scale.set(scaleX,scale,scaleZ);
+  model.updateMatrixWorld(true);
+  const fittedBounds=new THREE.Box3().setFromObject(model);
+  const center=fittedBounds.getCenter(new THREE.Vector3());
+  model.position.set(x-center.x,baseY-fittedBounds.min.y,z-center.z);
+  model.traverse(object=>{
+    if(!object.isMesh)return;
+    const materials=Array.isArray(object.material)?object.material:[object.material];
+    materials.forEach(material=>{
+      [material.map,material.normalMap,material.roughnessMap,material.metalnessMap]
+        .filter(Boolean).forEach(texture=>{
+          texture.anisotropy=decorationAnisotropy;
+          texture.needsUpdate=true;
+        });
+    });
+  });
+  scene.add(model);
+};
+function addCeramicStartPlaza(x,z){
+  const layers=[
+    {width:6,depth:6.4,height:.08,y:.04,color:0xd8d6cd},
+    {width:5.8,depth:6.2,height:.06,y:.11,color:0xf0e8d2},
+    {width:5.6,depth:6,height:.04,y:.16,color:0xfaf4e4}
+  ];
+  layers.forEach(({width,depth,height,y,color})=>{
+    const slab=new THREE.Mesh(new THREE.BoxGeometry(width,height,depth),
+      new THREE.MeshStandardMaterial({color,roughness:.72}));
+    slab.position.set(x,y,z);scene.add(slab);
+  });
+  const columns=8,rows=9,tileSize=.66,spacing=.7;
+  const tiles=new THREE.InstancedMesh(new THREE.BoxGeometry(tileSize,.025,tileSize),
+    new THREE.MeshStandardMaterial({color:0xffffff,roughness:.48}),columns*rows);
+  const palette=[0xf9f3e5,0xf1e6cf,0xfff9eb,0xf5ecd9];
+  const transform=new THREE.Object3D();
+  for(let row=0,index=0;row<rows;row++)for(let column=0;column<columns;column++,index++){
+    transform.position.set(x+(column-(columns-1)/2)*spacing,.1925,z+(row-(rows-1)/2)*spacing);
+    transform.updateMatrix();tiles.setMatrixAt(index,transform.matrix);
+    tiles.setColorAt(index,new THREE.Color(palette[(row+column*3)%palette.length]));
+  }
+  tiles.instanceMatrix.needsUpdate=true;
+  if(tiles.instanceColor)tiles.instanceColor.needsUpdate=true;
+  scene.add(tiles);
+}
+async function addMapDecorations(treeLocations){
+  const [monas,windmill,pine,round,blossom,palm,...landmarkAssets]=await Promise.all([
+    monasUrl,windmillUrl,pineTreeUrl,roundTreeUrl,blossomTreeUrl,palmTreeUrl,
+    ...activeLandmarks.map(landmark=>landmark.url)
+  ].map(url=>decorationLoader.loadAsync(url)));
+  const monasX=4,monasZ=-9.5,plazaTop=.18;
+  const plazaZ=-8.1;
+  addCeramicStartPlaza(monasX,plazaZ);
+  mergeStaticMeshes(monas.scene);
+  fitDecoration(monas.scene,6.5,monasX,monasZ,plazaTop);
+  mergeStaticMeshes(windmill.scene,windmill.animations);
+  fitDecoration(windmill.scene,6.75,13,5);
+  windmillRotor=windmill.scene.getObjectByName('Blades');
+  const treeModels=[pine.scene,round.scene,blossom.scene,palm.scene];
+  treeModels.forEach(model=>mergeStaticMeshes(model));
+  treeModels.forEach((model,modelIndex)=>addTreeInstances(model,
+    treeLocations.reduce((placements,[x,z],index)=>{
+      if(index%treeModels.length===modelIndex)
+        placements.push({x,z,height:1.8+(index%3)*.25});
+      return placements;
+    },[])
+  ));
+  activeLandmarks.forEach((landmark,index)=>{
+    const asset=landmarkAssets[index],model=asset?.scene;
+    if(!model)throw new Error(`Model landmark tidak ditemukan: ${landmark.url}`);
+    mergeStaticMeshes(model,asset.animations);
+    const x=landmark.centerX,z=landmark.centerZ;
+    fitDecoration(model,landmark.height,x,z,.04,landmark.yaw||0,
+      landmark.footprintX?{x:landmark.footprintX,z:landmark.footprintZ}:null);
+    if(landmark.animation){
+      const clip=asset.animations.find(animation=>animation.name===landmark.animation);
+      if(!clip)throw new Error(`Animasi ${landmark.animation} tidak ditemukan pada landmark.`);
+      const mixer=new THREE.AnimationMixer(model);
+      mixer.clipAction(clip).setLoop(THREE.LoopRepeat,Infinity)
+        .setEffectiveTimeScale(landmark.animation==='Erupt'?.7:1).play();
+      landmarkMixers.push(mixer);
+    }
+    if(landmark.effect)addTempleEffects(x,z,landmark.height,landmark.footprintX,landmark.footprintZ);
+  });
+}
+function addTempleEffects(x,z,height,width,depth){
+  const group=new THREE.Group();
+  group.position.set(x,0,z);
+  const particles=Array.from({length:10},(_,index)=>{
+    const angle=index*Math.PI*2/10,radius=.27+index%3*.07;
+    const particle=new THREE.Mesh(templeSparkleGeometry,templeSparkleMaterial);
+    particle.position.set(Math.cos(angle)*width*radius/2,height*(.28+(index%4)*.12),
+      Math.sin(angle)*depth*radius/2);
+    particle.userData.phase=index*Math.PI/5;
+    particle.userData.baseY=particle.position.y;
+    group.add(particle);
+    return particle;
+  });
+  scene.add(group);
+  templeEffects.push({group,particles});
+}
+export function updateWorldDecorations(delta){
+  if(windmillRotor)windmillRotor.rotation.z+=delta*.8;
+  landmarkMixers.forEach(mixer=>mixer.update(delta));
+  const time=performance.now()*.001;
+  templeEffects.forEach(({group,particles})=>{
+    group.rotation.y+=delta*.18;
+    particles.forEach(particle=>{
+      particle.position.y=particle.userData.baseY+Math.sin(time*1.5+particle.userData.phase)*.18;
+      const pulse=.68+Math.sin(time*2+particle.userData.phase)*.2;
+      particle.scale.setScalar(pulse);
+    });
+  });
+}
+const mapBounds=MAP.reduce((bounds,tile)=>{
+  const x=tile.p[0]*2,z=tile.p[1]*2;
+  bounds.minX=Math.min(bounds.minX,x-1);bounds.maxX=Math.max(bounds.maxX,x+1);
+  bounds.minZ=Math.min(bounds.minZ,z-1);bounds.maxZ=Math.max(bounds.maxZ,z+1);
+  if(tile.lot){
+    const halfSize=tile.lot.s;
+    const lotX=tile.lot.x*2,lotZ=tile.lot.z*2;
+    bounds.minX=Math.min(bounds.minX,lotX-halfSize);bounds.maxX=Math.max(bounds.maxX,lotX+halfSize);
+    bounds.minZ=Math.min(bounds.minZ,lotZ-halfSize);bounds.maxZ=Math.max(bounds.maxZ,lotZ+halfSize);
+  }
+  return bounds;
+},{minX:Infinity,maxX:-Infinity,minZ:Infinity,maxZ:-Infinity});
+const treeLocations=[];
+const clearOfRoadsAndLots=(x,z)=>{
+  for(let index=0;index<MAP.length;index++){
+    const tile=MAP[index];
+    if(T[index][1]==='l'){
+      const half=tile.lot.s;
+      if(Math.abs(x-tile.lot.x*2)<half+1.1&&Math.abs(z-tile.lot.z*2)<half+1.1)return false;
+    }else if(Math.abs(x-tile.p[0]*2)<2.1&&Math.abs(z-tile.p[1]*2)<2.1)return false;
+  }
+  return true;
+};
+const clearOfStructures=(x,z)=>{
+  if(Math.abs(x-HOSPITAL_POSITION.x)<3.5&&Math.abs(z-HOSPITAL_POSITION.z)<4.5)return false;
+  return activeLandmarks.every(landmark=>
+    Math.abs(x-landmark.centerX)>=landmark.clearanceX/2+.55||
+    Math.abs(z-landmark.centerZ)>=landmark.clearanceZ/2+.55
+  );
+};
+const clearForTree=(x,z)=>clearOfRoadsAndLots(x,z)&&clearOfStructures(x,z);
+const addTreeLocation=(x,z)=>{
+  const nearMonasPlaza=Math.abs(x-4)<4.5&&Math.abs(z+8.1)<5;
+  const nearMonas=Math.abs(x-4)<3.5&&Math.abs(z+9.5)<3.5;
+  if(nearMonasPlaza||nearMonas||!clearForTree(x,z))return;
+  if(!treeLocations.some(([treeX,treeZ])=>Math.hypot(treeX-x,treeZ-z)<1.25))
+    treeLocations.push([x,z]);
+};
+const addTreePerimeter=(bounds,offset,spacing,stagger=0)=>{
+  const minX=bounds.minX-offset,maxX=bounds.maxX+offset;
+  const minZ=bounds.minZ-offset,maxZ=bounds.maxZ+offset;
+  for(let x=minX+stagger;x<=maxX;x+=spacing){
+    addTreeLocation(x,minZ);addTreeLocation(x,maxZ);
+  }
+  for(let z=minZ+spacing/2;z<maxZ;z+=spacing){
+    addTreeLocation(minX,z);addTreeLocation(maxX,z);
+  }
+};
+addTreePerimeter(mapBounds,1,2);
+addTreePerimeter(mapBounds,2.7,2.4,1.2);
+for(const [dx,dz] of [[-2.5,-2.5],[2.5,-2.5],[-2.5,2.5],[2.5,2.5]]){
+  const x=13+dx,z=5+dz;
+  addTreeLocation(x,z);
+}
+activeLandmarks.filter(landmark=>landmark.trees).forEach(landmark=>{
+  const dx=landmark.clearanceX/2+1.2,dz=landmark.clearanceZ/2+1.2;
+  for(const [offsetX,offsetZ] of [[-dx,-dz],[dx,-dz],[-dx,dz],[dx,dz]])
+    addTreeLocation(landmark.centerX+offsetX,landmark.centerZ+offsetZ);
+});
+const worldBounds={...mapBounds};
+worldBounds.minX=Math.min(worldBounds.minX,4-3);
+worldBounds.maxX=Math.max(worldBounds.maxX,4+3);
+worldBounds.minZ=Math.min(worldBounds.minZ,-8.1-3.2,-9.5-2.5);
+worldBounds.maxZ=Math.max(worldBounds.maxZ,-8.1+3.2,-9.5+2.5);
+worldBounds.minX=Math.min(worldBounds.minX,13-3.5);
+worldBounds.maxX=Math.max(worldBounds.maxX,13+3.5);
+worldBounds.minZ=Math.min(worldBounds.minZ,5-3.5);
+worldBounds.maxZ=Math.max(worldBounds.maxZ,5+3.5);
+activeLandmarks.forEach(landmark=>{
+  worldBounds.minX=Math.min(worldBounds.minX,landmark.centerX-landmark.clearanceX/2);
+  worldBounds.maxX=Math.max(worldBounds.maxX,landmark.centerX+landmark.clearanceX/2);
+  worldBounds.minZ=Math.min(worldBounds.minZ,landmark.centerZ-landmark.clearanceZ/2);
+  worldBounds.maxZ=Math.max(worldBounds.maxZ,landmark.centerZ+landmark.clearanceZ/2);
+});
+worldBounds.minX=Math.min(worldBounds.minX,HOSPITAL_POSITION.x-3.5);
+worldBounds.maxX=Math.max(worldBounds.maxX,HOSPITAL_POSITION.x+3.5);
+worldBounds.minZ=Math.min(worldBounds.minZ,HOSPITAL_POSITION.z-4.5);
+worldBounds.maxZ=Math.max(worldBounds.maxZ,HOSPITAL_POSITION.z+4.5);
+worldBounds.minX-=1.5;worldBounds.maxX+=1.5;
+worldBounds.minZ-=1.5;worldBounds.maxZ+=1.5;
+const environmentBounds=treeLocations.reduce((bounds,[x,z])=>({
+  minX:Math.min(bounds.minX,x-1.5),maxX:Math.max(bounds.maxX,x+1.5),
+  minZ:Math.min(bounds.minZ,z-1.5),maxZ:Math.max(bounds.maxZ,z+1.5)
+}),{
+  minX:Math.min(worldBounds.minX,13-3.5,4-3),
+  maxX:Math.max(worldBounds.maxX,13+3.5,4+3),
+  minZ:Math.min(worldBounds.minZ,5-3.5,-8.1-3.2,-9.5-2.5),
+  maxZ:Math.max(worldBounds.maxZ,5+3.5,-8.1+3.2,-9.5+2.5)
+});
+const panMargin=2.4;
+const panBounds={
+  minX:environmentBounds.minX-panMargin,maxX:environmentBounds.maxX+panMargin,
+  minZ:environmentBounds.minZ-panMargin,maxZ:environmentBounds.maxZ+panMargin
+};
+panBounds.minZ-=4;
+const ground=new THREE.Mesh(
+  new THREE.PlaneGeometry(panBounds.maxX-panBounds.minX,panBounds.maxZ-panBounds.minZ),
+  mat(0x6cc644)
+);
+ground.rotation.x=-Math.PI/2;
+ground.position.set((panBounds.minX+panBounds.maxX)/2,-.02,(panBounds.minZ+panBounds.maxZ)/2);
+scene.add(ground);
+setWorldBounds(worldBounds,panBounds);
+addMapDecorations(treeLocations).catch(error=>console.error('Failed to load map decorations:',error));
 for(const tile of MAP)if(tile.lot){
   const id=tile.lot.id;
   const frontage=frontageByLot.get(id)||{x:0,z:0,count:0};
@@ -80,11 +430,47 @@ T.forEach((_,i)=>{
   group.positions.push(tp(i));
 });
 const roadTransform=new THREE.Object3D();
+const roadTiles=new Set(T.flatMap((tile,index)=>tile[1]==='l'?[]:[index]));
+const roadCoordinates=new Set([...roadTiles].map(index=>MAP[index].p.join(',')));
+const perimeterRoads=[...roadTiles].filter(index=>MAP[index].p[1]>=0);
+const roadBounds=perimeterRoads.reduce((bounds,index)=>{
+  const [x,z]=MAP[index].p;
+  return {minX:Math.min(bounds.minX,x),maxX:Math.max(bounds.maxX,x),
+    minZ:Math.min(bounds.minZ,z),maxZ:Math.max(bounds.maxZ,z)};
+},{minX:Infinity,maxX:-Infinity,minZ:Infinity,maxZ:-Infinity});
+const roadBorders=[];
+for(const index of roadTiles){
+  const [x,z]=MAP[index].p,[worldX,worldZ]=tp(index);
+  for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+    const atOuterEdge=dx===-1&&x===roadBounds.minX||
+      dx===1&&x===roadBounds.maxX||
+      dz===-1&&z===roadBounds.minZ||
+      dz===1&&z===roadBounds.maxZ;
+    const startSpurEdge=x===2&&(z===-2||z===-1)&&
+      (dx!==0||(z===-2&&dz===-1));
+    if(!(atOuterEdge||startSpurEdge)||roadCoordinates.has(`${x+dx},${z+dz}`))continue;
+    const horizontal=dx!==0;
+    roadBorders.push({
+      x:worldX+dx*1.06,z:worldZ+dz*1.06,
+      width:horizontal?.12:2,height:horizontal?2:.12
+    });
+  }
+}
+if(roadBorders.length){
+  const borders=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),
+    new THREE.MeshBasicMaterial({color:0xffffff}),roadBorders.length);
+  roadBorders.forEach(({x,z,width,height},index)=>{
+    roadTransform.position.set(x,.032,z);roadTransform.scale.set(width,.025,height);
+    roadTransform.updateMatrix();borders.setMatrixAt(index,roadTransform.matrix);
+  });
+  borders.instanceMatrix.needsUpdate=true;scene.add(borders);
+}
 roadGroups.forEach(({arms,positions})=>{
   const roads=new THREE.InstancedMesh(new THREE.PlaneGeometry(2,2),
     new THREE.MeshBasicMaterial({map:roadTex(arms)}),positions.length);
   positions.forEach(([x,z],i)=>{
     roadTransform.position.set(x,.02,z);roadTransform.rotation.set(-Math.PI/2,0,0);
+    roadTransform.scale.set(1,1,1);
     roadTransform.updateMatrix();roads.setMatrixAt(i,roadTransform.matrix);
   });
   roads.instanceMatrix.needsUpdate=true;scene.add(roads);

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { $, mat } from './config.js';
+import { $ } from './config.js';
 
 // ---------- scene ----------
 export const scene=new THREE.Scene();scene.background=new THREE.Color(0x8fd6ff);
@@ -10,24 +10,67 @@ renderer.outputEncoding=THREE.sRGBEncoding;
 export const cam=new THREE.OrthographicCamera(-1,1,1,-1,.1,150);
 export const panOffset=new THREE.Vector3();
 export const cameraOffset=new THREE.Vector3(12,8.5,12);
+let worldBounds=null;
+const MIN_CAMERA_PITCH=.4;
 const cameraDistance=cameraOffset.length();
 let cameraYaw=Math.atan2(cameraOffset.x,cameraOffset.z);
 let cameraPitch=Math.asin(cameraOffset.y/cameraDistance);
+let panBounds=null;
 export function orbitCamera(dx,dy){
   cameraYaw+=dx*.008;
-  cameraPitch=Math.max(.16,Math.min(1.4,cameraPitch-dy*.006));
+  cameraPitch=Math.max(MIN_CAMERA_PITCH,Math.min(1.4,cameraPitch-dy*.006));
   const horizontal=cameraDistance*Math.cos(cameraPitch);
   cameraOffset.set(Math.sin(cameraYaw)*horizontal,cameraDistance*Math.sin(cameraPitch),Math.cos(cameraYaw)*horizontal);
+  setZoom(cam.zoom);
 }
 function rs(){const w=$('app').clientWidth,h=$('app').clientHeight,a=w/h,hh=Math.max(5.2,6.5/a);renderer.setSize(w,h,false);
   cam.left=-hh*a;cam.right=hh*a;cam.top=hh;cam.bottom=-hh;cam.updateProjectionMatrix()}
 addEventListener('resize',rs);addEventListener('orientationchange',rs);window.visualViewport?.addEventListener('resize',rs);rs();
 const MIN_ZOOM=.65,MAX_ZOOM=2.8;
-function setZoom(value){cam.zoom=Math.max(MIN_ZOOM,Math.min(MAX_ZOOM,value));cam.updateProjectionMatrix()}
+function minimumWorldZoom(){
+  if(!worldBounds)return MIN_ZOOM;
+  const position=cam.position.clone(),rotation=cam.quaternion.clone();
+  cam.position.copy(cameraOffset);cam.lookAt(0,0,0);cam.updateMatrixWorld();
+  const right=new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld,0);
+  const up=new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld,1);
+  const direction=cam.getWorldDirection(new THREE.Vector3());
+  const groundUp=up.addScaledVector(direction,-up.y/direction.y);
+  const reachX=cam.right*Math.abs(right.x)+cam.top*Math.abs(groundUp.x);
+  const reachZ=cam.right*Math.abs(right.z)+cam.top*Math.abs(groundUp.z);
+  cam.position.copy(position);cam.quaternion.copy(rotation);cam.updateMatrixWorld();
+  return Math.max(MIN_ZOOM,2*reachX/(worldBounds.maxX-worldBounds.minX),
+    2*reachZ/(worldBounds.maxZ-worldBounds.minZ));
+}
+function setZoom(value){
+  cam.zoom=Math.max(minimumWorldZoom(),Math.min(MAX_ZOOM,value));
+  cam.updateProjectionMatrix();
+}
 export const zoomBy=factor=>setZoom(cam.zoom*factor);
 export const zoomIn=()=>setZoom(cam.zoom*1.2);
 export const zoomOut=()=>setZoom(cam.zoom/1.2);
 export const resetZoom=()=>setZoom(1);
+export function setWorldBounds(bounds,expandedBounds=bounds){
+  worldBounds=bounds;
+  panBounds=expandedBounds;
+  setZoom(cam.zoom);
+}
+export function constrainWorldView(target,focus){
+  if(!panBounds)return;
+  cam.position.copy(target).add(cameraOffset);
+  cam.lookAt(target);
+  cam.updateMatrixWorld();
+  const right=new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld,0);
+  const up=new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld,1);
+  const direction=cam.getWorldDirection(new THREE.Vector3());
+  const groundUp=up.addScaledVector(direction,-up.y/direction.y);
+  const halfWidth=cam.right/cam.zoom,halfHeight=cam.top/cam.zoom;
+  const reachX=halfWidth*Math.abs(right.x)+halfHeight*Math.abs(groundUp.x);
+  const reachZ=halfWidth*Math.abs(right.z)+halfHeight*Math.abs(groundUp.z);
+  const clamp=(value,min,max)=>min>max?(min+max)/2:Math.max(min,Math.min(max,value));
+  target.x=clamp(target.x,panBounds.minX+reachX,panBounds.maxX-reachX);
+  target.z=clamp(target.z,panBounds.minZ+reachZ,panBounds.maxZ-reachZ);
+  panOffset.copy(target).sub(focus);
+}
 $('zoomIn').addEventListener('click',zoomIn);
 $('zoomOut').addEventListener('click',zoomOut);
 $('zoomReset').addEventListener('click',resetZoom);
@@ -112,4 +155,3 @@ addEventListener('keydown',e=>{
   else if(e.key=='0')resetZoom();
 });
 scene.add(new THREE.AmbientLight(0xffffff,.88));const sun=new THREE.DirectionalLight(0xffffff,.55);sun.position.set(5,12,8);scene.add(sun);
-const gr=new THREE.Mesh(new THREE.PlaneGeometry(160,160),mat(0x6cc644));gr.rotation.x=-Math.PI/2;scene.add(gr);

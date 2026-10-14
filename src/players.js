@@ -6,6 +6,7 @@ import { createChibi } from '../Character/chibi.js';
 import { createChibiBoy } from '../Character/chibi-boy.js';
 
 export const OFF=[-.03,-.018,-.006,.006,.018,.03];
+const START_PLAZA_OFFSETS=[[-1.05,-.7],[0,-.7],[1.05,-.7],[-1.05,0],[0,0],[1.05,0]];
 export function laneOffset(index,from,to){
   const dx=to[0]-from[0],dz=to[1]-from[1],length=Math.hypot(dx,dz);
   if(!length)return [0,0];
@@ -54,7 +55,13 @@ export function portrait(p){const c=cvs(96),g=c.getContext('2d'),e=(x,y,a,b,f)=>
   g.strokeStyle='#d98a74';g.lineWidth=3;g.beginPath();g.moveTo(41,76);g.lineTo(55,76);g.stroke();
   c.style.cssText='width:62px;height:62px;border-radius:12px;display:block';return c}
 export const place=p=>{
-  const [x,z]=tp(p.pos),from=Number.isInteger(p.prev)&&p.prev>=0?tp(p.prev):[x,z-2],offset=laneOffset(p.i,from,[x,z]);
+  const [x,z]=tp(p.pos);
+  if(p.pos<0){
+    const [offsetX,offsetZ]=START_PLAZA_OFFSETS[p.i]||[0,0];
+    p.m.position.set(x+offsetX,.21,z+offsetZ);
+    return;
+  }
+  const from=Number.isInteger(p.prev)&&p.prev>=0?tp(p.prev):[x,z-2],offset=laneOffset(p.i,from,[x,z]);
   p.m.position.set(x+offset[0],.02,z+offset[1]);
 };
 configurePlayers(settings);

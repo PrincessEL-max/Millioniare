@@ -3,8 +3,8 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { SkeletonUtils } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { $, BN, BUILD, HOTEL, RENT, sleep, tween } from './config.js';
 import { directedNeighbor, LINKS, MAP, MAP_ID, T, nextPos, sn, tp } from './map.js';
-import { cameraOffset, cam, panOffset, renderer, scene } from './scene.js';
-import { L, LOT_TARGET_MESHES, drawLot, flashLot, setB } from './world.js';
+import { cameraOffset, cam, constrainWorldView, panOffset, renderer, scene } from './scene.js';
+import { HOSPITAL_POSITION, L, LOT_TARGET_MESHES, drawLot, flashLot, mergeStaticMeshes, setB, updateWorldDecorations } from './world.js';
 import { configurePlayers, laneOffset, P, place, portrait } from './players.js';
 import { die, face, rollDie } from './dice.js';
 import { G, acceptBoardTarget, ask, ban, buyPropertyDlg, chooseAuctionBid, chooseDieValue, chooseGameMode, chooseOne, chooseBoardTarget, hud, load, onlineLobby, previewBoardTarget, setItemUseHandler, setupGame, shop, showRemotePrompt, showRemoteWithdrawal, thumb, waitingForHost, withdrawDlg } from './ui.js';
@@ -25,6 +25,7 @@ import babyUrl from '../pets-pack/models/baby.glb?url';
 import catBlackUrl from '../pets-pack/models/cat_black.glb?url';
 import catWhiteUrl from '../pets-pack/models/cat_white.glb?url';
 import santaUrl from '../pets-pack/models/santa.glb?url';
+import hospitalUrl from '../landmarks-pack/models/hospital.glb?url';
 
 // ---------- aturan ----------
 const ownedLots=()=>[...new Set(L)].filter(Boolean);
@@ -129,7 +130,7 @@ async function collectPet(p,tile){
   if(p.h)await ban(portrait(p),p.css,PET_MODELS[found.kind].name,
     'Efek aktif selama 5 giliranmu.',1100);
 }
-const hospitalPosition=new THREE.Vector3(23.5,0,31);
+const hospitalPosition=new THREE.Vector3(HOSPITAL_POSITION.x,0,HOSPITAL_POSITION.z);
 const hospitalExitTile=MAP.reduce((best,tile,index)=>{
   if(T[index][1]==='l'||T[index][1]==='bus'||T[index][1]==='bank')return best;
   const distance=Math.hypot(tile.p[0]*2-hospitalPosition.x,tile.p[1]*2-hospitalPosition.z);
@@ -138,19 +139,32 @@ const hospitalExitTile=MAP.reduce((best,tile,index)=>{
 const hospitalExitPrevious=(LINKS[hospitalExitTile]||[]).find(index=>
   MAP[index].p[0]===MAP[hospitalExitTile].p[0]&&MAP[index].p[1]===MAP[hospitalExitTile].p[1]-1
 )??(LINKS[hospitalExitTile]||[])[0];
-const hospitalModel=new THREE.Group();
-const hospitalBody=new THREE.Mesh(new THREE.BoxGeometry(2.4,1.45,1.8),new THREE.MeshStandardMaterial({color:0xf4f6f8,roughness:.85}));
-hospitalBody.position.y=.72;hospitalModel.add(hospitalBody);
-const hospitalRoof=new THREE.Mesh(new THREE.BoxGeometry(2.65,.18,2.05),new THREE.MeshStandardMaterial({color:0xd84a4a}));
-hospitalRoof.position.y=1.55;hospitalModel.add(hospitalRoof);
-const hospitalDoor=new THREE.Mesh(new THREE.BoxGeometry(.55,.9,.06),new THREE.MeshStandardMaterial({color:0x8cbed0}));
-hospitalDoor.position.set(0,.48,.93);hospitalModel.add(hospitalDoor);
-const crossMaterial=new THREE.MeshStandardMaterial({color:0xd92f35});
-const crossV=new THREE.Mesh(new THREE.BoxGeometry(.24,.86,.08),crossMaterial);
-crossV.position.set(.72,1.14,.95);hospitalModel.add(crossV);
-const crossH=new THREE.Mesh(new THREE.BoxGeometry(.75,.23,.08),crossMaterial);
-crossH.position.set(.72,1.14,.95);hospitalModel.add(crossH);
-hospitalModel.position.copy(hospitalPosition);scene.add(hospitalModel);
+let hospitalMixer=null;
+new GLTFLoader().load(hospitalUrl,({scene:hospital,animations})=>{
+  mergeStaticMeshes(hospital,animations);
+  hospital.rotation.y=Math.PI/2;
+  hospital.updateMatrixWorld(true);
+  const bounds=new THREE.Box3().setFromObject(hospital),size=bounds.getSize(new THREE.Vector3());
+  if(size.y<=0)throw new Error('Model rumah sakit tidak memiliki tinggi yang valid.');
+  const scale=6.5/size.y;
+  const fitX=Math.min(1,6/(size.x*scale));
+  const fitZ=Math.min(1,8/(size.z*scale));
+  const scaleX=scale*fitZ,scaleZ=scale*fitX;
+  hospital.scale.set(scaleX,scale,scaleZ);
+  hospital.updateMatrixWorld(true);
+  const fittedBounds=new THREE.Box3().setFromObject(hospital);
+  const center=fittedBounds.getCenter(new THREE.Vector3());
+  hospital.position.set(
+    hospitalPosition.x-center.x,
+    -fittedBounds.min.y,
+    hospitalPosition.z-center.z
+  );
+  scene.add(hospital);
+  const idle=animations.find(animation=>animation.name==='Idle');
+  if(!idle)throw new Error('Animasi Idle tidak ditemukan pada model rumah sakit.');
+  hospitalMixer=new THREE.AnimationMixer(hospital);
+  hospitalMixer.clipAction(idle).setLoop(THREE.LoopRepeat,Infinity).play();
+},undefined,error=>console.error('Failed to load hospital model:',error));
 function burnCharacter(p,burned){
   if(burned&&!p.burnedMaterials){
     p.burnedMaterials=[];
@@ -713,7 +727,7 @@ function syncMovement(p,force=false){
   sendProgress({player:p.i,x:p.m.position.x,y:p.m.position.y,z:p.m.position.z,rotation:p.m.rotation.y,walking:!!p.networkWalking})
     ?.catch(error=>console.error('Online movement sync error:',error));
 }
-(function loop(){const now=performance.now(),delta=Math.min((now-lastPetFrame)/1000,.1);lastPetFrame=now;if(isGuest())P.forEach(p=>{if(p.networkTarget){p.m.position.lerp(p.networkTarget,.32);const turn=Math.atan2(Math.sin(p.networkRotation-p.m.rotation.y),Math.cos(p.networkRotation-p.m.rotation.y));p.m.rotation.y+=turn*.32}});foc.lerp(focusOverride||P[G.cur].m.position,.07);target.copy(foc).add(panOffset);cam.position.copy(target).add(cameraOffset);cam.lookAt(target);P.forEach(p=>p.m.userData.update?.(now));L.forEach(l=>l?.b?.userData.update?.(now));obstacles.forEach(item=>item.model.userData.update?.(now));petVisuals.forEach(visual=>visual.mixer.update(delta));renderer.render(scene,cam);requestAnimationFrame(loop)})();
+(function loop(){const now=performance.now(),delta=Math.min((now-lastPetFrame)/1000,.1);lastPetFrame=now;if(isGuest())P.forEach(p=>{if(p.networkTarget){p.m.position.lerp(p.networkTarget,.32);const turn=Math.atan2(Math.sin(p.networkRotation-p.m.rotation.y),Math.cos(p.networkRotation-p.m.rotation.y));p.m.rotation.y+=turn*.32}});foc.lerp(focusOverride||P[G.cur].m.position,.07);target.copy(foc).add(panOffset);constrainWorldView(target,foc);cam.position.copy(target).add(cameraOffset);cam.lookAt(target);P.forEach(p=>p.m.userData.update?.(now));L.forEach(l=>l?.b?.userData.update?.(now));obstacles.forEach(item=>item.model.userData.update?.(now));petVisuals.forEach(visual=>visual.mixer.update(delta));hospitalMixer?.update(delta);updateWorldDecorations(delta);renderer.render(scene,cam);requestAnimationFrame(loop)})();
 setNetworkHandlers({
   onState:state=>{try{applySnapshot(state)}catch(error){console.error(error)}},
   onProgress:progress=>{
