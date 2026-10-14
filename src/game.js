@@ -21,6 +21,7 @@ import { createItemJudge } from '../tools/item-judge.js';
 import { createItemRemote } from '../tools/item-remote.js';
 import { createItemThief } from '../tools/item-thief.js';
 import { showBankDialog } from '../Bank/bank-dialog.js';
+import { playEffect, playPetArrival, playPlayerLose, playPlayerTurn, playPlayerWin, startGameMusic, stopGameMusic } from './audio.js';
 import babyUrl from '../pets-pack/models/baby.glb?url';
 import catBlackUrl from '../pets-pack/models/cat_black.glb?url';
 import catWhiteUrl from '../pets-pack/models/cat_white.glb?url';
@@ -51,6 +52,7 @@ function ensurePetAssets(){
   return petAssetsReady;
 }
 const petTiles=new Map(),petVisuals=new Map();
+let hasAppliedNetworkSnapshot=false;
 let turnsUntilPetSpawn=3+Math.floor(Math.random()*8);
 const complexRent=(target,owner)=>
   ownedLots().reduce((sum,lot)=>sum+(lot.group==target.group&&lot.o==owner?propertyRent(lot):0),0);
@@ -105,7 +107,9 @@ function spawnRandomPet(){
   if(!candidates.length)return false;
   const tile=candidates[Math.floor(Math.random()*candidates.length)];
   const kind=PET_KINDS[Math.floor(Math.random()*PET_KINDS.length)];
-  return setMapPet(tile,kind);
+  if(!setMapPet(tile,kind))return false;
+  announcePet(tile,kind);
+  return true;
 }
 function advancePetSpawner(){
   if(turnsUntilPetSpawn>0)turnsUntilPetSpawn--;
@@ -446,7 +450,7 @@ async function useItem(p,index,action){
     }
     if(amount===null)return false;
     if(!Number.isSafeInteger(amount)||amount<1||amount>p.bank)return false;
-    p.bank-=amount;p.cash+=amount;used=true;
+    p.bank-=amount;p.cash+=amount;used=true;playEffect('bank');
     await ban(portrait(p),p.css,'COMPUTER',`Ambil $${amount} dari tabungan`,1000);
   }else if(item.id==='remote-control'){
     const result=action?.roll??(p.h?await chooseDieValue():6);
@@ -457,7 +461,7 @@ async function useItem(p,index,action){
   }else if(item.id==='lawyer'){
     const tile=p.pos,lot=L[tile];
     if(!allowedTargetFor(tile,item.id,p)){if(p.h)await ban(portrait(p),p.css,'LAWYER','Kamu harus berhenti di lahan milik lawan.',1000);return false}
-    const former=P[lot.o];lot.o=p.i;drawLot(tile);used=true;
+    const former=P[lot.o];lot.o=p.i;drawLot(tile);used=true;playPlayerWin(p);playPlayerLose(former);
     await showToolModel(item.id,p,{scaleOverride:.4});
     await ban(portrait(p),p.css,'LAWYER',`${lot.id} sekarang milikmu`,1100);
     await ban(portrait(former),former.css,'LAHAN DIAMBIL ALIH',lot.id,950);
@@ -471,7 +475,7 @@ async function useItem(p,index,action){
     if(targetIndex===null)return false;
     const target=P[targetIndex],stolen=Math.floor(target.cash*.25);
     if(!stolen)return false;
-    target.cash-=stolen;p.cash+=stolen;used=true;await showToolModel(item.id,p,{near:target,scaleOverride:.48});
+    target.cash-=stolen;p.cash+=stolen;used=true;playPlayerWin(p);await showToolModel(item.id,p,{near:target,scaleOverride:.48});
     await ban(portrait(p),p.css,'THIEF',`Mencuri $${stolen} dari ${target.n}`,1100);
   }else if(item.id==='toolkit'){
     const lot=canUseToolkit(p);
@@ -515,7 +519,7 @@ async function useItem(p,index,action){
       if(confirmed!==true)return false;
       used=true;
       if(lot.lv>0){
-        const animation=showDemolitionModel(lot);lot.lv=0;setB(tile);drawLot(tile);
+        const animation=showDemolitionModel(lot);playEffect('bomb');lot.lv=0;setB(tile);drawLot(tile);
         await animation;
         await ban(portrait(p),p.css,'DEMOLITION','Bangunan dihancurkan!',1100);
       }else await ban(portrait(p),p.css,'DEMOLITION','Lahan kosong, tidak ada bangunan.',1000);
@@ -614,20 +618,23 @@ async function step(p,n){for(let k=0;k<n;k++){
 }
 async function land(p){const t=T[p.pos],l=L[p.pos];
   if(obstacles.get(p.pos)?.id==='bomb'){
+    playEffect('bomb');
     clearObstacle(p.pos);p.hospitalTurns=3;p.pos=hospitalExitTile;p.prev=hospitalExitPrevious;p.nextMove=null;
     p.m.visible=true;burnCharacter(p,true);placeAtHospital(p);
     await ban(portrait(p),p.css,'BOM MELEDAK','Dibawa ke rumah sakit. Kamu melewatkan 3 giliran.',1500);return;
   }
-  if(t[1]=='pad'){p.cash+=t[2];hud();await ban(portrait(p),p.css,'COLLECT','$'+t[2]);return}
-  if(t[1]=='l'&&t[2]?.t=='pad'){p.cash+=t[2].v;hud();await ban(portrait(p),p.css,'COLLECT','$'+t[2].v)}
+  if(t[1]=='pad'){p.cash+=t[2];playEffect('coins');playPlayerWin(p);hud();await ban(portrait(p),p.css,'COLLECT','$'+t[2]);return}
+  if(t[1]=='l'&&t[2]?.t=='pad'){p.cash+=t[2].v;playEffect('coins');playPlayerWin(p);hud();await ban(portrait(p),p.css,'COLLECT','$'+t[2].v)}
   if(t[1]=='bank')return;
   if(t[1]=='bus')await shop(p);
   else if(t[1]=='l'){
     if(l.o>=0&&l.o!=p.i)await flashLot(p.pos);
     if(l.o<0){
       if(p.pet?.kind==='baby'){
+        playPetArrival(p.pet.kind);
         if(p.h)await ban(portrait(p),p.css,'BAYI','Kamu belum bisa membeli lahan.',950);
       }else{
+        if(p.pet)playPetArrival(p.pet.kind);
         const cost=petCost(p,l.price);
         if(p.cash>=cost){const y=p.h?await buyPropertyDlg(p,t[0],cost,propertyRent(l,0)):true;
           if(y){p.cash-=cost;l.o=p.i;drawLot(p.pos);hud();await sleep(300)}}
@@ -636,15 +643,20 @@ async function land(p){const t=T[p.pos],l=L[p.pos];
     }
     else if(l.o==p.i){
       if(p.pet?.kind==='baby'){
+        playPetArrival(p.pet.kind);
         if(p.h)await ban(portrait(p),p.css,'BAYI','Kamu belum bisa meningkatkan bangunan.',950);
       }else{
+        if(p.pet)playPetArrival(p.pet.kind);
         const nx=l.lv+1,cost=petCost(p,BUILD[nx],true);
         if(l.lv<5&&p.cash>=cost){const rent=propertyRent(l,nx),y=p.h?await buyPropertyDlg(p,l.s==2?HOTEL[nx]:BN[nx],cost,rent,{level:nx,hotel:l.s===2}):p.cash-cost>=200;
           if(y){p.cash-=cost;l.lv=nx;setB(p.pos);hud();await sleep(300)}}
       }
     }else{
-      const o=P[l.o],r=petCost(p,complexRent(l,l.o));await ban(portrait(p),p.css,t[0],'RENT $'+r,1300);
-      if(pay(p,r,o)){hud();await ban(portrait(o),o.css,'RECEIVED','$'+r,1000)}else{hud();await ban(portrait(p),p.css,p.n,'BANGKRUT 💥',1400)}
+      const o=P[l.o],r=petCost(p,complexRent(l,l.o));
+      if(p.pet?.kind==='cat-black'||p.pet?.kind==='cat-white')playPetArrival(p.pet.kind);
+      await ban(portrait(p),p.css,t[0],'RENT $'+r,1300);
+      playPlayerLose(p);
+      if(pay(p,r,o)){playPlayerWin(o);hud();await ban(portrait(o),o.css,'RECEIVED','$'+r,1000)}else{hud();await ban(portrait(p),p.css,p.n,'BANGKRUT 💥',1400)}
     }
   }
 }
@@ -685,7 +697,7 @@ function validPet(pet){
 function applySnapshot(state){
   if(!state||!Array.isArray(state.players)||state.players.length!==P.length||!Array.isArray(state.lots)||state.lots.length!==L.length||!Array.isArray(state.obstacles))
     throw new Error('Data permainan online tidak valid.');
-  const previousTurn=G.cur;
+  const previousTurn=G.cur,previousPets=new Map(petTiles);
   G.cur=((state.cur%P.length)+P.length)%P.length;
   state.players.forEach((data,i)=>{
     Object.assign(P[i],data);P[i].hospitalTurns=data.hospitalTurns||0;
@@ -705,6 +717,12 @@ function applySnapshot(state){
   state.obstacles.forEach(({tile,id,dir})=>{if(Number.isInteger(tile)&&tile>=0&&tile<MAP.length&&['bomb','street-sign','stop-sign'].includes(id))setObstacle(tile,{id,dir})});
   [...petTiles.keys()].forEach(clearMapPet);
   if(Array.isArray(state.pets))state.pets.slice(0,3).forEach(({tile,kind})=>setMapPet(tile,kind));
+  if(hasAppliedNetworkSnapshot){
+    petTiles.forEach(({kind},tile)=>{
+      if(previousPets.get(tile)?.kind!==kind)announcePet(tile,kind);
+    });
+  }
+  hasAppliedNetworkSnapshot=true;
   turnsUntilPetSpawn=Number.isInteger(state.petSpawnCountdown)?Math.max(0,Math.min(10,state.petSpawnCountdown)):3+Math.floor(Math.random()*8);
   hud();$('street').textContent=sn(P[G.cur].pos);
 }
@@ -715,8 +733,16 @@ function waveForTurn(p){
   p.waveTimer=setTimeout(()=>{p.m.userData.setWaving(false);p.waveTimer=null},1000);
 }
 function check(){const al=P.filter(p=>p.alive),w=al.length==1?al[0]:0;
-  if(w){G.over=true;hud();ask(portrait(w),'🏆 '+w.n+' menang!','Aset $'+nw(w),'🔁',0,24).then(()=>location.reload())}}
+  if(w){G.over=true;stopGameMusic();hud();ask(portrait(w),'🏆 '+w.n+' menang!','Aset $'+nw(w),'🔁',0,24).then(()=>location.reload())}}
 const foc=new THREE.Vector3().copy(P[0].m.position),target=new THREE.Vector3();
+const petFocusTarget=new THREE.Vector3();
+let petFocusUntil=0;
+function announcePet(tile,kind){
+  playPetArrival(kind);
+  const [x,z]=tp(tile);
+  petFocusTarget.set(x,0,z);
+  petFocusUntil=performance.now()+2200;
+}
 let lastProgressAt=0;
 let lastPetFrame=performance.now();
 function syncMovement(p,force=false){
@@ -727,7 +753,7 @@ function syncMovement(p,force=false){
   sendProgress({player:p.i,x:p.m.position.x,y:p.m.position.y,z:p.m.position.z,rotation:p.m.rotation.y,walking:!!p.networkWalking})
     ?.catch(error=>console.error('Online movement sync error:',error));
 }
-(function loop(){const now=performance.now(),delta=Math.min((now-lastPetFrame)/1000,.1);lastPetFrame=now;if(isGuest())P.forEach(p=>{if(p.networkTarget){p.m.position.lerp(p.networkTarget,.32);const turn=Math.atan2(Math.sin(p.networkRotation-p.m.rotation.y),Math.cos(p.networkRotation-p.m.rotation.y));p.m.rotation.y+=turn*.32}});foc.lerp(focusOverride||P[G.cur].m.position,.07);target.copy(foc).add(panOffset);constrainWorldView(target,foc);cam.position.copy(target).add(cameraOffset);cam.lookAt(target);P.forEach(p=>p.m.userData.update?.(now));L.forEach(l=>l?.b?.userData.update?.(now));obstacles.forEach(item=>item.model.userData.update?.(now));petVisuals.forEach(visual=>visual.mixer.update(delta));hospitalMixer?.update(delta);updateWorldDecorations(delta);renderer.render(scene,cam);requestAnimationFrame(loop)})();
+(function loop(){const now=performance.now(),delta=Math.min((now-lastPetFrame)/1000,.1);lastPetFrame=now;if(isGuest())P.forEach(p=>{if(p.networkTarget){p.m.position.lerp(p.networkTarget,.32);const turn=Math.atan2(Math.sin(p.networkRotation-p.m.rotation.y),Math.cos(p.networkRotation-p.m.rotation.y));p.m.rotation.y+=turn*.32}});foc.lerp(focusOverride||(now<petFocusUntil?petFocusTarget:P[G.cur].m.position),.07);target.copy(foc).add(panOffset);constrainWorldView(target,foc);cam.position.copy(target).add(cameraOffset);cam.lookAt(target);P.forEach(p=>p.m.userData.update?.(now));L.forEach(l=>l?.b?.userData.update?.(now));obstacles.forEach(item=>item.model.userData.update?.(now));petVisuals.forEach(visual=>visual.mixer.update(delta));hospitalMixer?.update(delta);updateWorldDecorations(delta);renderer.render(scene,cam);requestAnimationFrame(loop)})();
 setNetworkHandlers({
   onState:state=>{try{applySnapshot(state)}catch(error){console.error(error)}},
   onProgress:progress=>{
@@ -740,6 +766,7 @@ setNetworkHandlers({
   },
   onDiceRoll:async({player,value})=>{
     if(!Number.isInteger(player)||!P[player]||!Number.isInteger(value)||value<1||value>6)return;
+    playEffect('dice');playPlayerTurn(P[player]);
     const previousFocus=focusOverride;focusOverride=P[player].m.position.clone();
     try{await rollDie(P[player],value);await sleep(1200);die.visible=false}
     finally{focusOverride=previousFocus}
@@ -772,6 +799,7 @@ setNetworkHandlers({
   onError:error=>console.error('Online game error:',error)
 });
 async function main(){
+  startGameMusic();
   while(!G.over){const p=P[G.cur];hud();
     if(isHost())await sendState(snapshot());
     if(p.alive&&p.hospitalTurns>0){
@@ -793,6 +821,7 @@ async function main(){
             await useItem(p,index);
       }
       const fixed=p.nextRoll;p.nextRoll=null;
+      playEffect('dice');playPlayerTurn(p);
       const v=await rollDie(p,fixed,value=>{
         sendDiceRoll(p.i,value)?.catch(error=>console.error('Online dice sync error:',error));
       });await ban(face(v),'#9fb0c2',String(v),'GO',900);
@@ -857,5 +886,6 @@ async function main(){
     }
     configurePlayers(game.settings);
     applySnapshot(game.state);
+    startGameMusic();
   }
 })();

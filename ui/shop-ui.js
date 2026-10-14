@@ -63,7 +63,7 @@ const SHP_PLACEHOLDER = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xm
  * alat lain tetap tersedia dan bisa dibeli selama uangnya cukup. Toko ditutup lewat pintu (atau Escape).
  * Returns the purchased items and total spent when the shop closes.
  * Opsi: cash (uang pemain), owned (array id alat yang sudah dimiliki), mount, items (katalog), thumbs ({id: dataURL}),
- *   sound, width, texts, onBuy(item), dan mode='inventory' untuk memilih alat yang disimpan.
+ *   sound, width, texts, onBuy(item), onCashier(), dan mode='inventory' untuk memilih alat yang disimpan.
  */
 export async function openShop(opts = {}) {
   const o = Object.assign({ cash: 0, owned: [], mount: document.body, items: [], thumbs: null, sound: true, width: 'min(96vw, 980px)', texts: {}, onBuy: null, mode: 'shop', onSelect: null }, opts);
@@ -102,6 +102,7 @@ export async function openShop(opts = {}) {
         close(200, pack(it));
         return;
       }
+      if (o.onCashier) o.onCashier(pack(it));
       if (cash < it.price) { reg.classList.remove('shp-shake'); void reg.offsetWidth; reg.classList.add('shp-shake'); say(`${TX.poor} ($${it.price})`); if (o.sound) playDenied(); return; }
       if (o.onBuy && o.onBuy(pack(it)) === false) { reg.classList.remove('shp-shake'); void reg.offsetWidth; reg.classList.add('shp-shake'); say(TX.poor); if (o.sound) playDenied(); return; }
       cash -= it.price; bought.push(it); busy = true;

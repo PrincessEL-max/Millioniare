@@ -8,6 +8,7 @@ import { showBankDialog } from '../Bank/bank-dialog.js';
 import { createPropertyCard } from '../ui/property-card.js';
 import { propertyPreview } from '../ui/property-preview.js';
 import { openShop } from '../ui/shop-ui.js';
+import { playEffect, playPlayerWin } from './audio.js';
 import { createToolPreview } from '../ui/tool-preview.js';
 
 const STORE_CATALOG=ITEMS.map(item=>({...item,name:item.n}));
@@ -245,12 +246,12 @@ async function bankDlg(p){
 export async function withdrawDlg(p){
   if(isHost()&&G.cur!==myPlayerIndex()){
     const amount=await requestRemoteWithdrawal(p.bank,p.cash);
-    if(Number.isSafeInteger(amount)&&amount>=0&&amount<=p.bank){p.cash+=amount;p.bank-=amount;hud()}
+    if(Number.isSafeInteger(amount)&&amount>=0&&amount<=p.bank){p.cash+=amount;p.bank-=amount;if(amount>0)playEffect('bank');hud()}
     return;
   }
-  if(!p.h){const amount=p.bank;p.cash+=amount;p.bank=0;hud();return}
+  if(!p.h){const amount=p.bank;p.cash+=amount;p.bank=0;if(amount>0)playEffect('bank');hud();return}
   const result=await showBankDialog({cash:p.cash,bank:p.bank,mount:ov});
-  if(result.confirmed){p.cash=result.cash;p.bank=result.bank;hud()}
+  if(result.confirmed){if(result.cash>p.cash)playEffect('bank');p.cash=result.cash;p.bank=result.bank;hud()}
 }
 const canAct=()=>G.idle||(isGuest()&&guestCanRoll());
 export function hud(){const p=P[G.cur];$('cash').textContent=p.cash;$('bank').textContent=p.bank;$('pt').innerHTML='';$('pt').append(portrait(p));
@@ -280,7 +281,7 @@ async function remoteShop(p,stock){
   for(const item of stock){
     if(p.cash<item.price)continue;
     const buy=await askRemote('Toko Bus',`${item.name}<br>${item.description}<br>Harga: ${item.price}`,'Beli','Lewati');
-    if(buy){p.cash-=item.price;p.inv.push({id:item.id,n:item.name,icon:item.icon});hud()}
+    if(buy){playEffect('bank');p.cash-=item.price;p.inv.push({id:item.id,n:item.name,icon:item.icon});playPlayerWin(p);hud()}
   }
 }
 function aiShop(p){
@@ -306,7 +307,7 @@ function aiShop(p){
   ].find(id=>id&&!hasOwned(id));
   const item=STORE_CATALOG.find(entry=>entry.id===wanted);
   if(!item||p.cash<item.price+(wanted==='computer'?0:250))return;
-  p.cash-=item.price;p.inv.push({id:item.id,n:item.name,icon:item.icon});hud();
+  p.cash-=item.price;p.inv.push({id:item.id,n:item.name,icon:item.icon});playPlayerWin(p);hud();
 }
 export async function shop(p){
   if(!p.h){aiShop(p);return}
@@ -323,10 +324,11 @@ export async function shop(p){
       width:'min(96vw, 1180px)',
       items:stock.map(item=>({...item,desc:item.description})),
       thumbs:Object.fromEntries(stock.map(item=>[item.id,preview.thumbnail(item.id)])),
+      onCashier:()=>playEffect('bank'),
       onBuy:item=>{
         const catalogItem=ITEMS.find(entry=>entry.id===item.id);
         if(p.cash<item.price||p.inv.some(owned=>owned.id===item.id)||!catalogItem)return false;
-        p.cash-=item.price;p.inv.push({id:item.id,n:item.name,icon:catalogItem.icon});hud();return true;
+        p.cash-=item.price;p.inv.push({id:item.id,n:item.name,icon:catalogItem.icon});playPlayerWin(p);hud();return true;
       }
     });
   }finally{
