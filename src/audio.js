@@ -44,7 +44,7 @@ const ASSETS = {
   }
 };
 
-const CHARACTER_PLAYER = { mimi: 1, luna: 2, kai: 3, dika: 4, mika: 5, rin: 6 };
+const CHARACTER_PLAYER = { mimi: 1, luna: 2, kai: 3, tafa: 4, princessel: 5, rin: 6 };
 const activeEffects = new Set();
 let musicAudio = null;
 

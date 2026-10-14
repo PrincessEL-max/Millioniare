@@ -9,7 +9,7 @@ Kontrol zoom papan: gunakan scroll mouse/trackpad atau tombol +, - dan 0 (reset)
 
 ## Menu awal dan perlengkapan karakter
 - Halaman awal berada di `ui/main-menu.js`; sebelum mulai, pilih mode, salah satu dari enam map, lalu karakter. Model karakter dan model 3D perlengkapan awal ditampilkan pada pemilihan karakter.
-- Karakter: Mimi, Luna, Mika, Rin, Kai, dan Dika (4 perempuan, 2 laki-laki). Setiap karakter mulai dengan perlengkapan sesuai pemilihan menu.
+- Karakter: Mimi, Luna, PrincessEL, Rin, Kai, dan Tafa (4 perempuan, 2 laki-laki). Setiap karakter mulai dengan perlengkapan sesuai pemilihan menu.
 - Map Jakarta: cash/bank $1.500; Jogja: $2.000/$2.000; Solo: $2.500/$2.500; Malang: $2.000/$2.000; Bandung: $2.500/$2.500; Indonesia: $5.000/$5.000.
 - Efek suara dan musik permainan berada di `src/audio-assets/`; pengaturan **Sound effects** dan **Music** di menu awal mengaktifkan atau menonaktifkannya.
 
