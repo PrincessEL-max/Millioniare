@@ -104,8 +104,8 @@ export function waitForGameStart(){
   if(lastGameStart)return Promise.resolve(lastGameStart);
   return new Promise(resolve=>{startResolver=resolve});
 }
-export function startOnlineGame(settings,state){
-  return broadcast('game-start',{settings,state});
+export function startOnlineGame(settings,state,mapId){
+  return broadcast('game-start',{settings,state,mapId});
 }
 export function sendState(state){
   if(isHost())return broadcast('state',state);

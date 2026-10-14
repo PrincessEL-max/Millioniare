@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { SkeletonUtils } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { $, BN, BUILD, HOTEL, RENT, sleep, tween } from './config.js';
-import { directedNeighbor, LINKS, MAP, T, nextPos, sn, tp } from './map.js';
+import { directedNeighbor, LINKS, MAP, MAP_ID, T, nextPos, sn, tp } from './map.js';
 import { cameraOffset, cam, panOffset, renderer, scene } from './scene.js';
 import { L, LOT_TARGET_MESHES, drawLot, flashLot, setB } from './world.js';
 import { configurePlayers, laneOffset, P, place, portrait } from './players.js';
@@ -821,12 +821,17 @@ async function main(){
   }else if(isHost()){
     const settings=await setupGame({online:true});
     configurePlayers(settings);
-    await startOnlineGame(settings,snapshot());
+    await startOnlineGame(settings,snapshot(),MAP_ID);
     main();
   }else if(isGuest()){
     waitingForHost(room.room);
     const game=await waitForGameStart();
     $('ov').innerHTML='';
+    if(game.mapId!==MAP_ID){
+      await ban(portrait(P[0]),P[0].css,'Map tidak cocok',
+        `Pilih Map ${game.mapId} seperti host, lalu gabung kembali ke room.`,1800);
+      return;
+    }
     configurePlayers(game.settings);
     applySnapshot(game.state);
   }

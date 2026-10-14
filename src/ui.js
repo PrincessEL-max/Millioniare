@@ -1,5 +1,5 @@
 import { $, CASH0, cvs, sleep } from './config.js';
-import { LINKS, tp } from './map.js';
+import { LINKS, MAP_ID, tp } from './map.js';
 import { L, drawLot, setB } from './world.js';
 import { ITEMS } from './items.js';
 import { configurePlayers, getPlayerSettings, P, place, portrait } from './players.js';
@@ -259,9 +259,9 @@ $('dice').onclick=()=>{if(isGuest()&&guestCanRoll()&&!ov.firstChild){sendRollReq
 $('hud').onclick=()=>{if(canAct()&&!ov.firstChild)bankDlg(P[G.cur])};
 $('ch').onclick=()=>{if(!canAct()||ov.firstChild)return;selectInventoryItem(P[G.cur]).catch(showRemoteError)};
 $('bc').onclick=()=>{if(!canAct()&&!isOnline()||ov.firstChild)return;const actions=isOnline()?[ib('🚪',async()=>{await leaveRoom();location.reload()}),ib('✖',clr)]:[ib('💾',()=>{save();clr()}),ib('🚪',()=>{location.reload()}),ib('✖',clr)];card(txt('Menu','',24),btns(actions))};
-function save(){try{localStorage.setItem('mt3d',JSON.stringify({mapVersion:10,settings:getPlayerSettings(),cur:G.cur,P:P.map(p=>({pos:p.pos,prev:p.prev,nextMove:p.nextMove,cash:p.cash,bank:p.bank,alive:p.alive,inv:p.inv,pet:p.pet})),L:L.map(l=>l&&{o:l.o,lv:l.lv}),extra:G.saveExtra?.()}))}catch(e){}}
+function save(){try{localStorage.setItem('mt3d',JSON.stringify({mapVersion:10,mapId:MAP_ID,settings:getPlayerSettings(),cur:G.cur,P:P.map(p=>({pos:p.pos,prev:p.prev,nextMove:p.nextMove,cash:p.cash,bank:p.bank,alive:p.alive,inv:p.inv,pet:p.pet})),L:L.map(l=>l&&{o:l.o,lv:l.lv}),extra:G.saveExtra?.()}))}catch(e){}}
 export function load(){try{const q=JSON.parse(localStorage.getItem('mt3d'));if(!q)return false;
-  if(q.mapVersion!==10||!q.settings||!Array.isArray(q.P)||!Array.isArray(q.L)||q.L.length!==L.length||q.L.some((a,i)=>a&&!L[i])){
+  if(q.mapVersion!==10||(q.mapId??6)!==MAP_ID||!q.settings||!Array.isArray(q.P)||!Array.isArray(q.L)||q.L.length!==L.length||q.L.some((a,i)=>a&&!L[i])){
     localStorage.removeItem('mt3d');return false}
   configurePlayers(q.settings);
   if(q.P.length!==P.length){localStorage.removeItem('mt3d');return false}

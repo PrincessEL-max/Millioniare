@@ -6,7 +6,20 @@ const bus=(x,z)=>({p:[x,z],ic:{t:'bus'}});
 const bank=(x,z)=>({p:[x,z],ic:{t:'bank'}});
 const star=(x,z)=>({p:[x,z],ic:{t:'star'}});
 
-export const START=[2,-3];
+export const MAP_DEFINITIONS=[
+  {id:1,label:'Map 1',maxX:9,maxY:5},
+  {id:2,label:'Map 2',maxX:9,maxY:13},
+  {id:3,label:'Map 3',maxX:9,maxY:21},
+  {id:4,label:'Map 4',maxX:5,maxY:13},
+  {id:5,label:'Map 5',maxX:5,maxY:29},
+  {id:6,label:'Map 6',maxX:9,maxY:29}
+];
+const savedMapId=Number(localStorage.getItem('mt3d-map')||6);
+export const MAP_ID=MAP_DEFINITIONS.some(map=>map.id===savedMapId)?savedMapId:6;
+const definition=MAP_DEFINITIONS.find(map=>map.id===MAP_ID);
+const START=[2,-3];
+export { START };
+
 const tiles=new Map(),put=tile=>tiles.set(tile.p.join(','),tile);
 const putRoad=(x,z)=>put(road(x,z));
 
@@ -73,13 +86,22 @@ for(let section=1;section<4;section++){
 // The final four frontage spaces offer two independent 2x2 hotel plots.
 for(let x=5;x<=8;x++){
   const left=x<=6,centerX=left?5.5:7.5,id=left?'Hotel Land South A':'Hotel Land South B';
-  const property={x:centerX,z:31,s:2,n:id,id,group:'hotel-land-south'};
+  const property={x:centerX,z:30.5,s:2,n:id,id,group:'hotel-land-south'};
   put({p:[x,29],lot:property});
 }
 // Four plots above the first loop match the entrance approach in the sketch.
 for(let x=5;x<=8;x++)placeLot(x,0,x,-1,`Entrance ${++smallId}`,1,'entrance');
 
-export const MAP=[...tiles.values()];
+const originalMap=[...tiles.values()];
+export const MAP=MAP_ID===6?originalMap:originalMap.filter(tile=>{
+  const [x,y]=tile.p;
+  const isStartSpur=x===START[0]&&(y===-2||y===-1);
+  if(isStartSpur)return true;
+  if(x<0||x>definition.maxX||y<0||y>definition.maxY)return false;
+  if(MAP_ID===4&&x===5)return false;
+  if(MAP_ID===5&&x===5)return false;
+  return true;
+});
 export const TREES={fixed:[],random:{n:0,box:[-8,-8,8,8]}};
 export const T=MAP.map(m=>m.lot?[m.lot.n,'l',m.ic||null]:m.ic?
   m.ic.t=='bus'?['Bus','bus']:m.ic.t=='bank'?['Tabungan','bank']:

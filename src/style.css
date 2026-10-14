@@ -7,6 +7,7 @@ body{background:var(--bg);font-family:system-ui,-apple-system,"Segoe UI",Roboto,
 #app{position:relative;width:100%;height:100%;height:100dvh;overflow:hidden}
 #c{position:absolute;inset:0;z-index:0;display:block;width:100%;height:100%;touch-action:none}
 #zoom{display:none}
+body.map-picking #hud,body.map-picking #side,body.map-picking #street,body.map-picking #zoom{visibility:hidden}
 #zoom button{width:42px;height:42px;border:1px solid #fff9;border-radius:12px;background:rgba(38,50,66,.84);color:#fff;font-size:26px;font-weight:700;line-height:1;cursor:pointer;box-shadow:0 2px 8px #0005}
 #zoom button:active{transform:scale(.94)}
 #zoom button:last-child{font-size:22px}
@@ -20,6 +21,15 @@ body{background:var(--bg);font-family:system-ui,-apple-system,"Segoe UI",Roboto,
 #side #dice canvas{width:48px!important;height:48px!important;border-radius:10px!important}
 #side #dice::after{content:"LEMPAR DADU";color:#b51e1e;font-size:9px;font-weight:900;line-height:1;letter-spacing:.03em}
 #ov{position:absolute;z-index:3;top:0;bottom:0;left:0;right:92px;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.map-picker{box-sizing:border-box;width:min(600px,94%);max-height:calc(100dvh - 32px);overflow:auto;display:grid;gap:12px;padding:20px;border:1px solid #ffffff66;border-radius:22px;background:var(--gl);color:#fff;text-align:center;font-style:normal;letter-spacing:0;box-shadow:0 6px 22px #0006;pointer-events:auto}
+.map-picker h2,.map-picker p{margin:0}
+.map-picker h2{font-size:clamp(22px,4vw,30px)}
+.map-picker p,.map-choice span,.map-picker-error{font-size:14px}
+.map-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.map-choice{min-height:56px;display:grid;gap:3px;align-content:center;padding:8px;border:1px solid #ffffff80;border-radius:12px;background:#ffffff18;color:#fff;font:inherit;cursor:pointer}
+.map-choice strong{font-size:16px}
+.map-choice:disabled{opacity:.7;cursor:wait}
+.map-picker-error{color:#ffe07a}
 .card{pointer-events:auto;background:var(--gl);border-radius:22px;padding:14px 18px;max-width:94%;display:flex;gap:14px;align-items:center;box-shadow:0 6px 22px #0006}
 .target-card{position:absolute;top:12px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;pointer-events:none}
 .target-card .ib{pointer-events:auto}
@@ -65,6 +75,10 @@ button{touch-action:manipulation}
   #side #dice canvas{width:36px!important;height:36px!important}
   #side #dice::after{font-size:7px}
   #ov{left:max(4px,env(safe-area-inset-left));right:68px}
+  .map-picker{gap:8px;padding:12px;border-radius:16px}
+  .map-picker p,.map-choice span,.map-picker-error{font-size:12px}
+  .map-choice{min-height:46px;padding:6px}
+  .map-choice strong{font-size:14px}
   .card{max-width:98%;max-height:calc(100dvh - 20px);overflow:auto;gap:10px;padding:10px 12px;border-radius:16px}
   .card .tx>div:first-child{font-size:clamp(16px,4.3vh,23px)!important}
   .card .tx>div:nth-child(2){font-size:clamp(13px,3.4vh,18px)!important}
