@@ -4,6 +4,8 @@ import { scene } from './scene.js';
 import { L, drawLot } from './world.js';
 import { createChibi } from '../Character/chibi.js';
 import { createChibiBoy } from '../Character/chibi-boy.js';
+import { CHARACTERS } from '../ui/menu-data.js';
+import { ITEMS } from './items.js';
 
 export const OFF=[-.03,-.018,-.006,.006,.018,.03];
 const START_PLAZA_OFFSETS=[[-1.05,-.7],[0,-.7],[1.05,-.7],[-1.05,0],[0,0],[1.05,0]];
@@ -26,20 +28,25 @@ let settings={humanCount:1,computerCount:2,cash:CASH0,bank:CASH0};
 export function getPlayerSettings(){return {...settings}}
 export function configurePlayers(next){
   const total=next.humanCount+next.computerCount;
+  const playerIds=Array.isArray(next.playerIds)?next.playerIds.slice(0,total):[];
   if(!Number.isInteger(next.humanCount)||next.humanCount<1||
     !Number.isInteger(next.computerCount)||next.computerCount<0||
     total<2||total>STYLES.length||
     !Number.isSafeInteger(next.cash)||next.cash<0||
-    !Number.isSafeInteger(next.bank)||next.bank<0)
+    !Number.isSafeInteger(next.bank)||next.bank<0||
+    playerIds.some(id=>!CHARACTERS.some(character=>character.id===id)))
     throw new RangeError('Pengaturan permainan tidak valid');
   P.forEach(p=>{if(p.m)scene.remove(p.m)});
-  settings={...next};
+  settings={...next,playerIds};
   P=STYLES.slice(0,total).map((style,i)=>{
-    const p={...style,n:`Player ${i+1}`,i,h:i<settings.humanCount,
+    const profile=CHARACTERS.find(character=>character.id===playerIds[i]);
+    const p={...style,n:profile?.name||`Player ${i+1}`,characterId:profile?.id||null,i,h:i<settings.humanCount,
       css:hex(style.c),skc:hex(style.sk),hrc:hex(style.hr),pos:-1,prev:null,
-      cash:settings.cash,bank:settings.bank,alive:true,inv:[],hospitalTurns:0,nextRoll:null,nextMove:null,pet:null};
+      cash:settings.cash,bank:settings.bank,alive:true,
+      inv:(profile?.items||[]).map(id=>{const item=ITEMS.find(entry=>entry.id===id);return item?{id:item.id,n:item.n,icon:item.icon}:null}).filter(Boolean),
+      hospitalTurns:0,nextRoll:null,nextMove:null,pet:null};
     const scale=total>3?.38:.42;
-    p.m=i%2===0
+    p.m=profile?profile.make():i%2===0
       ?createChibi({hair:style.hr,skin:style.sk,sweater:style.c})
       :createChibiBoy({outfit:i%4===1?'hoodie':'uniform',hair:style.hr,skin:style.sk,top:style.c});
     p.m.scale.setScalar(scale);scene.add(p.m);place(p);return p;

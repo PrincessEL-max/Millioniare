@@ -8,7 +8,7 @@ import { HOSPITAL_POSITION, L, LOT_TARGET_MESHES, drawLot, flashLot, mergeStatic
 import { configurePlayers, laneOffset, P, place, portrait } from './players.js';
 import { die, face, rollDie } from './dice.js';
 import { G, acceptBoardTarget, ask, ban, buyPropertyDlg, chooseAuctionBid, chooseDieValue, chooseGameMode, chooseOne, chooseBoardTarget, hud, load, onlineLobby, previewBoardTarget, setItemUseHandler, setupGame, shop, showRemotePrompt, showRemoteWithdrawal, thumb, waitingForHost, withdrawDlg } from './ui.js';
-import { isGuest, isHost, isOnline, myPlayerIndex, requestRemoteItemUse, respondToBankRequest, sendDiceRoll, sendProgress, sendState, setNetworkHandlers, startOnlineGame, waitForGameStart, waitForRemoteRoll } from './multiplayer.js';
+import { getPeerCharacterId, isGuest, isHost, isOnline, myPlayerIndex, requestRemoteItemUse, respondToBankRequest, sendDiceRoll, sendProgress, sendState, setNetworkHandlers, startOnlineGame, waitForGameStart, waitForRemoteRoll } from './multiplayer.js';
 import { createItemArrow } from '../tools/item-arrow.js';
 import { createItemBomb } from '../tools/item-bomb.js';
 import { createItemCone } from '../tools/item-cone.js';
@@ -802,7 +802,9 @@ async function main(){
     if(isHost())await sendState(snapshot());
     G.cur=(G.cur+1)%P.length}}
 (async()=>{
-  let mode=await chooseGameMode(),resumed=false;
+  const startupOptions=JSON.parse(sessionStorage.getItem('mt3d-start-options')||'null');
+  sessionStorage.removeItem('mt3d-start-options');
+  let mode=startupOptions?.mode||await chooseGameMode(),resumed=false;
   try{await ensurePetAssets()}
   catch(error){
     console.error('Failed to load pet models:',error);
@@ -811,14 +813,14 @@ async function main(){
   }
   let room;
   while(mode==='online'){
-    room=await onlineLobby();
+    room=await onlineLobby(startupOptions?.playerIds?.[0]||'');
     if(room.role!=='back')break;
     mode=await chooseGameMode();
   }
   if(mode==='local'){
     let ok=false;
     try{ok=!!localStorage.getItem('mt3d')}catch(e){}
-    if(ok){
+    if(ok&&(!startupOptions||startupOptions.load)){
       const resume=await ask(portrait(P[0]),'Game tersimpan','Lanjutkan?','▶','🆕',22);
       if(resume){
         resumed=load();
@@ -827,13 +829,20 @@ async function main(){
       }else localStorage.removeItem('mt3d');
     }
     if(!resumed){
-      const settings=await setupGame();
+      const settings=startupOptions&&!startupOptions.load
+        ?{humanCount:1,computerCount:startupOptions.playerIds.length-1,cash:startupOptions.cash,bank:startupOptions.bank,playerIds:startupOptions.playerIds}
+        :await setupGame();
       configurePlayers(settings);
       try{localStorage.removeItem('mt3d')}catch(e){}
     }
     main();
   }else if(isHost()){
-    const settings=await setupGame({online:true});
+    const settings=await setupGame({online:true,cash:startupOptions?.cash??CASH0,bank:startupOptions?.bank??CASH0});
+    if(startupOptions){
+      const playerIds=startupOptions.playerIds;
+      playerIds[1]=getPeerCharacterId()||playerIds[1];
+      settings.playerIds=playerIds;
+    }
     configurePlayers(settings);
     await startOnlineGame(settings,snapshot(),MAP_ID);
     main();

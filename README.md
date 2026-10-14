@@ -7,6 +7,11 @@
 Deploy ke Vercel: push ke GitHub, import di vercel.com/new (Vite terdeteksi otomatis).
 Kontrol zoom papan: gunakan scroll mouse/trackpad atau tombol +, - dan 0 (reset). Titik Start hanya menjadi posisi awal dan tidak dapat dikunjungi lagi.
 
+## Menu awal dan perlengkapan karakter
+- Halaman awal berada di `ui/main-menu.js`; sebelum mulai, pilih mode, salah satu dari enam map, lalu karakter. Model karakter dan model 3D perlengkapan awal ditampilkan pada pemilihan karakter.
+- Karakter: Mimi, Luna, Mika, Rin, Kai, dan Dika (4 perempuan, 2 laki-laki). Setiap karakter mulai dengan perlengkapan sesuai pemilihan menu.
+- Map Jakarta: cash/bank $1.500; Jogja: $2.000/$2.000; Solo: $2.500/$2.500; Malang: $2.000/$2.000; Bandung: $2.500/$2.500; Indonesia: $5.000/$5.000.
+
 ## Aplikasi Android
 - Proyek Android dibangun dengan Capacitor; game berjalan di dalam aplikasi dan tidak membuka browser.
 - Aplikasi dikunci ke orientasi landscape. Geser papan dengan satu jari; tombol +, −, dan ↺ di kiri bawah mengatur zoom.

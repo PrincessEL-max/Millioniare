@@ -130,7 +130,7 @@ export function chooseGameMode(){return new Promise(resolve=>{
   const title=txt('Millionaire Tycoon 3D','Pilih mode permainan',24,18);
   card(title,btns([wide('Satu perangkat',()=>{clr();resolve('local')}),wide('Online - beda perangkat',()=>{clr();resolve('online')})]))
 })}
-export function onlineLobby(){return new Promise(resolve=>{
+export function onlineLobby(characterId=''){return new Promise(resolve=>{
   const title=document.createElement('h2');title.textContent='Room online';
   const form=document.createElement('div');form.className='online-lobby';
   const code=document.createElement('input');code.className='room-code';code.maxLength=6;code.placeholder='KODE ROOM';code.autocomplete='off';code.setAttribute('aria-label','Kode room');
@@ -145,7 +145,7 @@ export function onlineLobby(){return new Promise(resolve=>{
   });
   const join=wide('Gabung room',async()=>{
     join.disabled=true;create.disabled=true;cancel.disabled=true;
-    try{const room=await joinRoom(code.value);clr();resolve({role:'guest',room})}
+    try{const room=await joinRoom(code.value,characterId);clr();resolve({role:'guest',room})}
     catch(error){status.className='setup-error';status.textContent=error.message;join.disabled=false;create.disabled=false;cancel.disabled=false}
   });
   const cancel=wide('Kembali',async()=>{await leaveRoom();clr();resolve({role:'back'})});
@@ -155,14 +155,14 @@ export function waitingForHost(code){
   const message=txt('Terhubung ke room',`Kode ${code}<br>Menunggu host memulai permainan...`,24,18);
   card(message);
 }
-export function setupGame({online=false}={}){return new Promise(resolve=>{
+export function setupGame({online=false,cash=CASH0,bank=CASH0}={}){return new Promise(resolve=>{
   const form=document.createElement('form');form.className='setup-form';
   const title=document.createElement('h2');title.textContent=online?'Pengaturan permainan online':'Pengaturan permainan';form.append(title);
   const fields=[
     ...(!online?[['humanCount','Pemain manusia',1,6,1]]:[]),
     ['computerCount','Komputer',0,online?4:5,online?0:2],
-    ['cash','Uang awal',0,1000000,CASH0],
-    ['bank','Tabungan awal',0,1000000,CASH0]
+    ['cash','Uang awal',0,1000000,cash],
+    ['bank','Tabungan awal',0,1000000,bank]
   ];
   const inputs={};
   for(const [key,label,min,max,value] of fields){

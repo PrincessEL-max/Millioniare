@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
 const EVENTS=['join','room-ready','game-start','state','progress','dice-roll','roll-request','prompt','answer','bank-request','bank-result','bank-withdraw-request','bank-withdraw-result','item-use-request','item-use-result'];
-let client,channel,role='offline',roomCode='',peerId='',selfId=crypto.randomUUID();
+let client,channel,role='offline',roomCode='',peerId='',peerCharacterId='',selfId=crypto.randomUUID();
 let handlers={},guestResolver,startResolver,rollResolver,roomReadyResolver,guestConnected=false,guestReady=false,lastGameStart;
 const answers=new Map(),bankRequests=new Map(),withdrawRequests=new Map(),itemUseRequests=new Map();
 
@@ -11,6 +11,7 @@ export const isGuest=()=>role==='guest';
 export const guestCanRoll=()=>guestReady;
 export const myPlayerIndex=()=>role==='host'?0:role==='guest'?1:-1;
 export const currentRoom=()=>roomCode;
+export const getPeerCharacterId=()=>peerCharacterId;
 export function setNetworkHandlers(next){handlers=next}
 function broadcast(event,payload={}) {
   if(!channel)throw new Error('Belum terhubung ke room online');
@@ -20,7 +21,7 @@ function setupChannel(code,nextRole){
   const url=import.meta.env.VITE_SUPABASE_URL,key=import.meta.env.VITE_SUPABASE_ANON_KEY;
   if(!url||!key)throw new Error('Konfigurasi VITE_SUPABASE_URL dan VITE_SUPABASE_ANON_KEY belum diisi.');
   client=createClient(url,key);
-  role=nextRole;roomCode=code;selfId=crypto.randomUUID();peerId='';
+  role=nextRole;roomCode=code;selfId=crypto.randomUUID();peerId='';peerCharacterId='';
   channel=client.channel(`millionaire-${code}`,{config:{broadcast:{self:false},presence:{key:selfId}}});
   EVENTS.forEach(event=>channel.on('broadcast',{event},({payload})=>handleEvent(event,payload||{})));
   return new Promise((resolve,reject)=>{
@@ -46,7 +47,7 @@ function handleEvent(event,payload){
   if(role==='host'){
     if(event==='join'&&payload.clientId&&payload.clientId!==selfId){
       if(peerId&&peerId!==payload.clientId)return;
-      peerId=payload.clientId;guestConnected=true;
+      peerId=payload.clientId;peerCharacterId=payload.characterId||'';guestConnected=true;
       broadcast('room-ready',{clientId:peerId}).catch(error=>handlers.onError?.(error));
       guestResolver?.(true);guestResolver=null;handlers.onGuestJoined?.();
     }else if(payload.clientId===peerId){
@@ -75,7 +76,7 @@ export async function createRoom(){
   await setupChannel(code,'host');
   return code;
 }
-export async function joinRoom(code){
+export async function joinRoom(code,characterId=''){
   const normalized=code.toUpperCase().replace(/[^A-Z0-9]/g,'');
   if(!/^[A-Z0-9]{6}$/.test(normalized))throw new Error('Kode room harus terdiri dari 6 karakter.');
   try{
@@ -86,7 +87,7 @@ export async function joinRoom(code){
         const timer=setTimeout(()=>{roomReadyResolver=null;resolve(false)},900);
         roomReadyResolver=()=>{clearTimeout(timer);resolve(true)};
       });
-      await broadcast('join',{clientId:selfId});
+      await broadcast('join',{clientId:selfId,characterId});
       if(await ready)return normalized;
     }
   }catch(error){
@@ -173,7 +174,7 @@ export function requestRemoteItemUse(itemIndex,action){
   });
 }
 export async function leaveRoom(){
-  const old=channel;channel=null;role='offline';peerId='';roomCode='';
+  const old=channel;channel=null;role='offline';peerId='';peerCharacterId='';roomCode='';
   guestConnected=false;guestReady=false;lastGameStart=null;roomReadyResolver=null;
   const waitingGuest=guestResolver;guestResolver=null;waitingGuest?.(false);
   answers.clear();bankRequests.clear();withdrawRequests.clear();itemUseRequests.clear();rollResolver=null;guestResolver=null;startResolver=null;

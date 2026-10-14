@@ -1,48 +1,42 @@
-const maps=[
-  {id:1,title:'Map 1',size:'X 0–9 · Y 0–5'},
-  {id:2,title:'Map 2',size:'X 0–9 · Y 0–13'},
-  {id:3,title:'Map 3',size:'X 0–9 · Y 0–21'},
-  {id:4,title:'Map 4',size:'X 0–5 · Y 0–13'},
-  {id:5,title:'Map 5',size:'X 0–5 · Y 0–29'},
-  {id:6,title:'Map 6',size:'Map saat ini'}
-];
-const overlay=document.getElementById('ov');
-document.body.classList.add('map-picking');
-const picker=document.createElement('section');
-picker.className='map-picker';
-const title=document.createElement('h2');
-title.textContent='Pilih Map';
-const hint=document.createElement('p');
-hint.textContent='Pilih papan permainan. Untuk multiplayer, pastikan semua pemain memilih map yang sama.';
-const options=document.createElement('div');
-options.className='map-options';
-const error=document.createElement('div');
-error.className='map-picker-error';
-error.setAttribute('role','alert');
-picker.append(title,hint,options,error);
-maps.forEach(map=>{
-  const button=document.createElement('button');
-  button.type='button';
-  button.className='map-choice';
-  const name=document.createElement('strong');
-  name.textContent=map.title;
-  const size=document.createElement('span');
-  size.textContent=map.size;
-  button.append(name,size);
-  button.addEventListener('click',async()=>{
-    options.querySelectorAll('button').forEach(choice=>choice.disabled=true);
-    error.textContent='';
-    try{
-      localStorage.setItem('mt3d-map',String(map.id));
-      document.body.classList.remove('map-picking');
-      await import('./game.js');
-    }catch(reason){
-      document.body.classList.add('map-picking');
-      overlay.replaceChildren(picker);
-      error.textContent=`Gagal memuat map: ${reason.message||String(reason)}`;
-      options.querySelectorAll('button').forEach(choice=>choice.disabled=false);
-    }
-  });
-  options.append(button);
+import { showMainMenu } from '../ui/main-menu.js';
+
+const app=document.getElementById('app');
+let menu;
+document.body.classList.add('menu-active');
+
+async function launch(options){
+  try{
+    if(Number.isInteger(options.mapId))localStorage.setItem('mt3d-map',String(options.mapId));
+    sessionStorage.setItem('mt3d-start-options',JSON.stringify(options));
+    menu.destroy();
+    document.body.classList.remove('menu-active');
+    await import('./game.js');
+  }catch(error){
+    document.body.classList.add('menu-active');
+    sessionStorage.removeItem('mt3d-start-options');
+    const message=document.createElement('section');
+    message.style.cssText='position:absolute;inset:10%;z-index:20;display:grid;place-content:center;gap:12px;padding:24px;border-radius:18px;background:#263238;color:#fff;text-align:center;font:600 16px system-ui';
+    const title=document.createElement('strong');title.textContent='Game gagal dimulai';
+    const detail=document.createElement('span');detail.textContent=error.message||String(error);
+    const retry=document.createElement('button');retry.textContent='Muat ulang';retry.onclick=()=>location.reload();
+    message.append(title,detail,retry);app.append(message);
+    console.error('Failed to start game:',error);
+  }
+}
+
+menu=showMainMenu({
+  mount:app,
+  hasSave:()=>Boolean(localStorage.getItem('mt3d')),
+  onLoad:()=>launch({
+    mode:'local',
+    load:true,
+    mapId:Number(localStorage.getItem('mt3d-map')||6)
+  }),
+  onStart:result=>launch({
+    mode:result.mode==='offline'?'local':'online',
+    mapId:result.map.id,
+    cash:result.map.cash,
+    bank:result.map.bank,
+    playerIds:[result.character.id,...result.computers.map(character=>character.id)]
+  })
 });
-overlay.replaceChildren(picker);

@@ -7,12 +7,12 @@ const bank=(x,z)=>({p:[x,z],ic:{t:'bank'}});
 const star=(x,z)=>({p:[x,z],ic:{t:'star'}});
 
 export const MAP_DEFINITIONS=[
-  {id:1,label:'Map 1',maxX:9,maxY:5},
-  {id:2,label:'Map 2',maxX:9,maxY:13},
-  {id:3,label:'Map 3',maxX:9,maxY:21},
-  {id:4,label:'Map 4',maxX:5,maxY:13},
-  {id:5,label:'Map 5',maxX:5,maxY:29},
-  {id:6,label:'Map 6',maxX:9,maxY:29}
+  {id:1,label:'Jakarta',maxX:9,maxY:5},
+  {id:2,label:'Jogja',maxX:9,maxY:13},
+  {id:3,label:'Solo',maxX:9,maxY:21},
+  {id:4,label:'Malang',maxX:5,maxY:13},
+  {id:5,label:'Bandung',maxX:5,maxY:29},
+  {id:6,label:'Indonesia',maxX:9,maxY:29}
 ];
 const savedMapId=Number(localStorage.getItem('mt3d-map')||6);
 export const MAP_ID=MAP_DEFINITIONS.some(map=>map.id===savedMapId)?savedMapId:6;
