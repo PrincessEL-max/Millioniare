@@ -28,6 +28,11 @@ Kontrol zoom papan: gunakan scroll mouse/trackpad atau tombol +, - dan 0 (reset)
 - Buka game di dua perangkat, pilih **Online - beda perangkat**. Satu pemain membuat room dan membagikan kode 6 karakter; pemain kedua memilih **Gabung room** dan memasukkan kodenya.
 - Pemain pembuat room mengatur saldo awal dan jumlah komputer sebelum memulai. Kedua perangkat melihat posisi pemain dan lemparan dadu secara langsung; kedua pemain manusia bergiliran mengendalikan pembelian, upgrade, dan keputusan bank dari perangkat masing-masing.
 
+## Strategi komputer
+- Komputer menilai pembelian dan upgrade lahan berdasarkan cadangan kas, nilai sewa, serta peluang melengkapi kelompok lahan.
+- Komputer mengatur penarikan dari bank, memilih alat yang sesuai situasi, dan menyimpan alat sampai ada sasaran yang berguna. Remote Control membandingkan kemungkinan hasil dadu; alat penghalang diarahkan ke jalur yang diperkirakan dilalui lawan.
+- Pet dinilai sesuai efeknya terhadap strategi dan kondisi keuangan komputer.
+
 ## Struktur src/
 - map.js: bentuk jaringan jalan, titik start, lot, ikon, dan pohon. Persimpangan memilih arah acak; jalur buntu membuat pemain berbalik. Lahan kecil berharga 135/sewa dasar 25; lahan besar berukuran 4x, memakai dua petak jalan, dan berharga 200/sewa dasar 50. Sewa dikalikan jumlah petak yang dimiliki pemain pada baris tersebut.
 - items.js: katalog barang toko bus, mengambil item berharga dari `ui/items.js`. Toko menawarkan stok acak 2-11 alat per kunjungan dan menyembunyikan alat yang sudah ada di inventaris. Empat Street Sign arah layar tetap (↑ atas, → kanan, ↓ bawah, ← kiri) masing-masing seharga $75; Bomb ($50), Broom ($50), Computer ($50), Stop Sign ($125), Demolition ($175), For Rent ($150), Remote Control ($125), Lawyer ($325), Toolkit ($125), dan Thief ($125).
@@ -37,6 +42,7 @@ Kontrol zoom papan: gunakan scroll mouse/trackpad atau tombol +, - dan 0 (reset)
 - players.js: data pemain, karakter 3D, potret.
 - dice.js: dadu 3D.
 - ui.js: HUD, dialog, banner, simpan/muat, toko, dan penyimpanan alat.
+- bot.js: evaluasi strategi komputer untuk uang, lahan, dadu, pet, dan penggunaan alat.
 - multiplayer.js: room Supabase Realtime, sinkronisasi giliran, gerak pion, dan lemparan dadu online.
 - game.js: aturan main dan giliran, penggunaan item lewat tombol **Alat** sebelum lempar dadu, rintangan jalan, rumah sakit, dan lelang.
 

@@ -10,9 +10,9 @@ import { propertyPreview } from '../ui/property-preview.js';
 import { openShop } from '../ui/shop-ui.js';
 import { playEffect, playPlayerWin } from './audio.js';
 import { createToolPreview } from '../ui/tool-preview.js';
+import { botCashTarget, chooseBotShopItem } from './bot.js';
 
 const STORE_CATALOG=ITEMS.map(item=>({...item,name:item.n}));
-const STREET_SIGN_IDS=['street-sign-front','street-sign-right','street-sign-back','street-sign-left'];
 function randomStoreStock(p){
   const available=STORE_CATALOG.filter(item=>!p.inv.some(owned=>owned.id===item.id));
   for(let i=available.length-1;i>0;i--){
@@ -249,7 +249,10 @@ export async function withdrawDlg(p){
     if(Number.isSafeInteger(amount)&&amount>=0&&amount<=p.bank){p.cash+=amount;p.bank-=amount;if(amount>0)playEffect('bank');hud()}
     return;
   }
-  if(!p.h){const amount=p.bank;p.cash+=amount;p.bank=0;if(amount>0)playEffect('bank');hud();return}
+  if(!p.h){
+    const target=botCashTarget(p,P,L),amount=Math.min(p.bank,Math.max(0,target-p.cash));
+    p.cash+=amount;p.bank-=amount;if(amount>0)playEffect('bank');hud();return;
+  }
   const result=await showBankDialog({cash:p.cash,bank:p.bank,mount:ov});
   if(result.confirmed){if(result.cash>p.cash)playEffect('bank');p.cash=result.cash;p.bank=result.bank;hud()}
 }
@@ -285,28 +288,11 @@ async function remoteShop(p,stock){
   }
 }
 function aiShop(p){
-  const rivals=P.filter(player=>player.alive&&player.i!==p.i);
-  const hasOwned=id=>p.inv.some(item=>item.id===id);
-  const rivalLand=L.some(lot=>lot&&lot.o>=0&&lot.o!==p.i);
-  const rivalBuilding=L.some(lot=>lot&&lot.o>=0&&lot.o!==p.i&&lot.lv>0);
-  const ownUpgrade=L.some(lot=>lot&&lot.o===p.i&&lot.lv<5);
-  const richestRival=rivals.some(player=>player.cash>=100);
-  const streetSign=STREET_SIGN_IDS.find(id=>!hasOwned(id));
-  const wanted=[
-    p.cash<400&&p.bank>0?'computer':null,
-    G.hasObstacle?.()&&p.cash>=300?'broom':null,
-    rivalBuilding&&p.cash>=1500?'demolition':null,
-    rivalLand&&p.cash>=1500?'lawyer':null,
-    ownUpgrade&&p.cash>=1000?'toolkit':null,
-    richestRival&&p.cash>=800?'thief':null,
-    p.cash>=1800?'for-rent':null,
-    p.cash>=1000?'remote-control':null,
-    p.cash>=800?'stop-sign':null,
-    streetSign&&p.cash>=600?streetSign:null,
-    p.cash>=500?'bomb':null
-  ].find(id=>id&&!hasOwned(id));
-  const item=STORE_CATALOG.find(entry=>entry.id===wanted);
-  if(!item||p.cash<item.price+(wanted==='computer'?0:250))return;
+  const context=G.botContext?.();
+  if(!context)return;
+  const stock=STORE_CATALOG.filter(item=>!p.inv.some(owned=>owned.id===item.id));
+  const item=chooseBotShopItem(stock,p,context);
+  if(!item)return;
   p.cash-=item.price;p.inv.push({id:item.id,n:item.name,icon:item.icon});playPlayerWin(p);hud();
 }
 export async function shop(p){

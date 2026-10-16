@@ -22,6 +22,7 @@ import { createItemRemote } from '../tools/item-remote.js';
 import { createItemThief } from '../tools/item-thief.js';
 import { showBankDialog } from '../Bank/bank-dialog.js';
 import { playEffect, playPetArrival, playPlayerLose, playPlayerTurn, playPlayerWin, startGameMusic, stopGameMusic } from './audio.js';
+import { botCashTarget, botReserve, chooseBotRoll, chooseBotTarget, shouldBuyLot, shouldUpgradeLot } from './bot.js';
 import babyUrl from '../pets-pack/models/baby.glb?url';
 import catBlackUrl from '../pets-pack/models/cat_black.glb?url';
 import catWhiteUrl from '../pets-pack/models/cat_white.glb?url';
@@ -57,6 +58,7 @@ let turnsUntilPetSpawn=3+Math.floor(Math.random()*8);
 const complexRent=(target,owner)=>
   ownedLots().reduce((sum,lot)=>sum+(lot.group==target.group&&lot.o==owner?propertyRent(lot):0),0);
 const obstacles=new Map(),mapIndex=new Map(MAP.map((tile,index)=>[tile.p.join(','),index]));
+G.botContext=()=>({players:P,lots:L,obstacles,pets:petTiles,pathTiles:MAP.map((_,index)=>index),currentPlayer:G.cur});
 let focusOverride=null;
 const STREET_SIGN_DIRS={
   'street-sign-front':'back','street-sign-right':'right',
@@ -288,6 +290,10 @@ async function chooseToolTarget(p,id,message){
     });
   }
   const candidates=MAP.map((_,tile)=>tile).filter(tile=>allowedTargetFor(tile,id,p));
+  let target=chooseBotTarget(p,id,G.botContext());
+  if(id==='demolition'||id==='for-rent')target=target?L.indexOf(target):-1;
+  if(['broom','demolition','for-rent','bomb','stop-sign'].includes(id)||isStreetSign(id))
+    return Number.isInteger(target)&&candidates.includes(target)?target:null;
   if(id==='broom')return candidates.filter(tile=>obstacles.has(tile)).sort((a,b)=>Math.abs(a-p.pos)-Math.abs(b-p.pos))[0]??null;
   if(id==='demolition')return candidates.filter(tile=>L[tile].o>=0&&L[tile].o!==p.i).sort((a,b)=>(L[b].lv-L[a].lv))[0]??null;
   if(id==='for-rent')return candidates.sort((a,b)=>(L[b].rent-L[a].rent))[0]??null;
@@ -303,9 +309,14 @@ function allowedTargetFor(tile,id,p){
   return isPathTile(tile);
 }
 function aiBidLimit(p,lot){
-  const rent=propertyRent(lot),groupBonus=ownedLots().some(item=>item.group===lot.group&&item.o===p.i)?rent*4:0;
+  const reserve=botReserve(p);
+  const group=ownedLots().filter(item=>item.group===lot.group);
+  const owned=group.filter(item=>item.o===p.i).length;
+  const completesGroup=owned>0&&owned===group.length-1;
+  const available=Math.max(0,p.cash-(completesGroup?Math.floor(reserve*.55):reserve));
+  const rent=propertyRent(lot),groupBonus=owned?rent*4:0;
   const value=lot.price+BUILD.slice(1,lot.lv+1).reduce((sum,cost)=>sum+cost,0);
-  return Math.min(p.cash,Math.max(value,Math.floor((value+rent*5+groupBonus)/100)*100));
+  return Math.min(available,Math.max(value,Math.floor((value+rent*5+groupBonus)/100)*100));
 }
 async function runAuction(p,tile){
   const lot=L[tile];if(!lot)return false;
@@ -441,19 +452,21 @@ async function useItem(p,index,action){
   let used=false;
   if(item.id==='computer'){
     if(p.bank<=0){await ban(portrait(p),p.css,'Computer','Tabungan bank kosong',900);return false}
-    if(!p.h&&p.cash>=500)return false;
     let amount=action?.amount;
     if(amount===undefined){
-      const result=await showBankDialog({cash:0,bank:p.bank,mount:document.getElementById('ov'),labels:{cash:'Diambil:',bank:'Sisa bank:'}});
-      if(!result.confirmed)return false;
-      amount=result.cash;
+      if(!p.h)amount=Math.min(p.bank,Math.max(0,botCashTarget(p,P,L)-p.cash));
+      else{
+        const result=await showBankDialog({cash:0,bank:p.bank,mount:document.getElementById('ov'),labels:{cash:'Diambil:',bank:'Sisa bank:'}});
+        if(!result.confirmed)return false;
+        amount=result.cash;
+      }
     }
     if(amount===null)return false;
     if(!Number.isSafeInteger(amount)||amount<1||amount>p.bank)return false;
     p.bank-=amount;p.cash+=amount;used=true;playEffect('bank');
     await ban(portrait(p),p.css,'COMPUTER',`Ambil $${amount} dari tabungan`,1000);
   }else if(item.id==='remote-control'){
-    const result=action?.roll??(p.h?await chooseDieValue():6);
+    const result=action?.roll??(p.h?await chooseDieValue():chooseBotRoll(p,G.botContext()));
     if(result===null)return false;
     if(!Number.isSafeInteger(result)||result<1||result>6)return false;
     p.nextRoll=result;used=true;await showToolModel(item.id,p,{scaleOverride:.52});
@@ -482,7 +495,7 @@ async function useItem(p,index,action){
     if(!lot){if(p.h)await ban(portrait(p),p.css,'TOOLKIT',p.pet?.kind==='baby'
       ?'Bayi membuatmu tidak bisa meningkatkan bangunan.'
       :'Berhenti di lahan milikmu yang masih bisa ditingkatkan.',1100);return false}
-    const confirmed=action?.confirm??await confirmToolkit(p,lot);
+    const confirmed=action?.confirm??(p.h?await confirmToolkit(p,lot):shouldUpgradeLot(p,lot,0,P,L,{free:true}));
     if(confirmed!==true)return false;
     const level=lot.lv+1;used=true;await showToolModel(item.id,p);
     lot.lv=level;setB(p.pos);drawLot(p.pos);hud();
@@ -509,13 +522,13 @@ async function useItem(p,index,action){
       setObstacle(tile,{id:isStreetSign(item.id)?'street-sign':item.id,dir});used=true;
       await ban(portrait(p),p.css,item.n,'Rintangan dipasang di '+sn(tile),950);
     }else if(item.id==='broom'){
-      if(action?.confirm!==true)return false;
+      if(action?.confirm!==true&&p.h)return false;
       if(!clearObstacle(tile)){if(p.h)await ban(portrait(p),p.css,'BROOM','Tidak ada rintangan di petak ini.',950);return false}
       used=true;await showToolModel(item.id,p);
       await ban(portrait(p),p.css,'BROOM','Rintangan berhasil dibersihkan',950);
     }else if(item.id==='demolition'){
       const lot=L[tile];if(!lot)return false;
-      const confirmed=action?.confirm??await confirmDemolition(p,lot);
+      const confirmed=action?.confirm??(p.h?await confirmDemolition(p,lot):true);
       if(confirmed!==true)return false;
       used=true;
       if(lot.lv>0){
@@ -524,7 +537,7 @@ async function useItem(p,index,action){
         await ban(portrait(p),p.css,'DEMOLITION','Bangunan dihancurkan!',1100);
       }else await ban(portrait(p),p.css,'DEMOLITION','Lahan kosong, tidak ada bangunan.',1000);
     }else if(item.id==='for-rent'){
-      if(action?.confirm!==true)return false;
+      if(action?.confirm!==true&&p.h)return false;
       const lot=L[tile];if(!lot)return false;
       used=true;await showToolModel(item.id,p);await runAuction(p,tile);
     }
@@ -636,7 +649,7 @@ async function land(p){const t=T[p.pos],l=L[p.pos];
       }else{
         if(p.pet)playPetArrival(p.pet.kind);
         const cost=petCost(p,l.price);
-        if(p.cash>=cost){const y=p.h?await buyPropertyDlg(p,t[0],cost,propertyRent(l,0)):true;
+        if(p.cash>=cost){const y=p.h?await buyPropertyDlg(p,t[0],cost,propertyRent(l,0)):shouldBuyLot(p,l,cost,P,L);
           if(y){p.cash-=cost;l.o=p.i;drawLot(p.pos);hud();await sleep(300)}}
         else if(p.h)await ban(portrait(p),p.css,t[0],'Uang kurang',1000);
       }
@@ -648,7 +661,7 @@ async function land(p){const t=T[p.pos],l=L[p.pos];
       }else{
         if(p.pet)playPetArrival(p.pet.kind);
         const nx=l.lv+1,cost=petCost(p,BUILD[nx],true);
-        if(l.lv<5&&p.cash>=cost){const rent=propertyRent(l,nx),y=p.h?await buyPropertyDlg(p,l.s==2?HOTEL[nx]:BN[nx],cost,rent,{level:nx,hotel:l.s===2}):p.cash-cost>=200;
+        if(l.lv<5&&p.cash>=cost){const rent=propertyRent(l,nx),y=p.h?await buyPropertyDlg(p,l.s==2?HOTEL[nx]:BN[nx],cost,rent,{level:nx,hotel:l.s===2}):shouldUpgradeLot(p,l,cost,P,L);
           if(y){p.cash-=cost;l.lv=nx;setB(p.pos);hud();await sleep(300)}}
       }
     }else{
