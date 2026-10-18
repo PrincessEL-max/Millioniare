@@ -30,9 +30,8 @@ const MM_CSS = `
 .mm-screen.left{transform:translateX(-5%)}
 .mm-title{position:absolute;left:50%;top:calc(var(--s)*2.5);width:calc(var(--s)*74);margin-left:calc(var(--s)*-37);translate:calc(var(--px)*var(--s)*1) calc(var(--py)*var(--s)*.6)}
 .mm-title-in{animation:mm-bob 5s ease-in-out infinite}
-.mm-logo{display:block;width:100%;height:auto;overflow:visible;filter:drop-shadow(0 calc(var(--s)*1) calc(var(--s)*1.2) rgba(10,40,110,.35));animation:mm-pop 1s cubic-bezier(.2,1.4,.4,1) both}
+.mm-logo{display:block;width:100%;height:auto;overflow:visible;filter:drop-shadow(0 calc(var(--s)*1) calc(var(--s)*1.2) rgba(10,40,110,.35))}
 @keyframes mm-bob{0%,100%{transform:translateY(0) rotate(-.5deg)}50%{transform:translateY(calc(var(--s)*-.9)) rotate(.5deg)}}
-@keyframes mm-pop{0%{transform:scale(.5);opacity:0}70%{transform:scale(1.05);opacity:1}100%{transform:scale(1)}}
 .mm-shine{animation:mm-shine 4.5s ease-in-out infinite}
 @keyframes mm-shine{0%,55%{transform:translateX(-340px) skewX(-20deg)}100%{transform:translateX(1300px) skewX(-20deg)}}
 .mm-rib{transform-box:fill-box;transform-origin:50% 50%;animation:mm-sway 4s ease-in-out infinite}
@@ -264,7 +263,7 @@ ${pick('map')}${pick('char')}
   function startGame() {
     const character = o.characters[state.charIdx], result = { mode: state.mode, map: o.maps[state.mapIdx], character, computers: pickComputers(o.characters, character.id, o.computers) };
     sfx(() => playChaChing(0.6)); try { options.vibrate && navigator.vibrate && navigator.vibrate(30); } catch (e) {} q('.mm-go').classList.add('on');
-    setTimeout(() => { if (o.onStart) o.onStart(result); }, 1100);
+    setTimeout(() => { if (o.onStart) o.onStart(result); }, 500);
   }
   const press = (el, fn) => { el.addEventListener('click', fn); };
   qa('.mm-tile').forEach(t => press(t, () => {

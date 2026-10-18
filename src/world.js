@@ -24,27 +24,35 @@ import gedungSateUrl from '../landmarks-pack/models/gedung_sate.glb?url';
 // ---------- jalan & lot ----------
 const ICONS={'pad-20':'coin-20.png','pad-50':'coin-50.png','pad-100':'coin-100.png',bus:'bus.png',bank:'bank.png',star:'star.png'};
 const iconLoader=new THREE.TextureLoader();
+const iconAssets=new Map(),iconGeometry=new THREE.PlaneGeometry(1.98,1.98);
+const iconTransform=new THREE.Object3D();
 const iconTile=ic=>ic.t=='pad'?[String(ic.v),'pad',ic.v,ic.c]:[ic.t=='bank'?'Tabungan':ic.t=='bus'?'Bus':'Bintang',ic.t];
 function canvasTex(c){const tex=new THREE.CanvasTexture(c);tex.encoding=THREE.sRGBEncoding;tex.anisotropy=renderer.capabilities.getMaxAnisotropy();return tex}
+function getIconAsset(file){
+  if(iconAssets.has(file))return iconAssets.get(file);
+  const asset={ready:false,mesh:null,material:null};
+  const texture=iconLoader.load(`/icons/${file}`,loaded=>{
+    loaded.encoding=THREE.sRGBEncoding;
+    loaded.anisotropy=renderer.capabilities.getMaxAnisotropy();
+    asset.ready=true;
+    asset.mesh.visible=true;
+  },undefined,error=>console.error(`Failed to load street icon: ${file}`,error));
+  texture.encoding=THREE.sRGBEncoding;
+  texture.anisotropy=renderer.capabilities.getMaxAnisotropy();
+  asset.material=new THREE.MeshBasicMaterial({map:texture,transparent:true,alphaTest:.02,depthWrite:false,side:THREE.DoubleSide});
+  asset.mesh=new THREE.InstancedMesh(iconGeometry,asset.material,MAP.length);
+  asset.mesh.count=0;asset.mesh.visible=false;scene.add(asset.mesh);
+  iconAssets.set(file,asset);
+  return asset;
+}
 function addIcon(t,x,z){
   const key=t[1]=='pad'?`pad-${t[2]}`:t[1],file=ICONS[key];
   if(!file)return;
-  iconLoader.load(`/icons/${file}`,loaded=>{
-    const image=loaded.image,c=cvs(image.width,image.height),g=c.getContext('2d');
-    g.drawImage(image,0,0);const pixels=g.getImageData(0,0,c.width,c.height),data=pixels.data,queue=new Uint32Array(c.width*c.height);
-    // Remove edge-connected white only, keeping white details inside each logo.
-    let head=0,tail=0;
-    const add=(i)=>{const n=i*4;if(data[n+3]&&data[n]>242&&data[n+1]>242&&data[n+2]>242){data[n+3]=0;queue[tail++]=i}};
-    for(let a=0;a<c.width;a++){add(a);add((c.height-1)*c.width+a)}
-    for(let a=1;a<c.height-1;a++){add(a*c.width);add(a*c.width+c.width-1)}
-    while(head<tail){const i=queue[head++],x0=i%c.width;
-      if(x0)add(i-1);if(x0<c.width-1)add(i+1);
-      if(i>=c.width)add(i-c.width);if(i<c.width*(c.height-1))add(i+c.width)}
-    g.putImageData(pixels,0,0);loaded.dispose();
-    const texture=canvasTex(c),material=new THREE.MeshBasicMaterial({map:texture,transparent:true,alphaTest:.02,depthWrite:false,side:THREE.DoubleSide});
-    const logo=new THREE.Mesh(new THREE.PlaneGeometry(1.98,1.98),material);
-    logo.rotation.x=-Math.PI/2;logo.position.set(x,.105,z);scene.add(logo);
-  },undefined,error=>console.error(`Failed to load street icon: ${file}`,error));
+  const asset=getIconAsset(file);
+  iconTransform.position.set(x,.105,z);iconTransform.rotation.set(-Math.PI/2,0,0);
+  iconTransform.updateMatrix();
+  asset.mesh.setMatrixAt(asset.mesh.count++,iconTransform.matrix);
+  asset.mesh.instanceMatrix.needsUpdate=true;
 }
 export const L=[];
 export const LOT_TARGET_MESHES=[];

@@ -307,7 +307,7 @@ export async function withdrawDlg(p){
 const canAct=()=>G.idle||(isGuest()&&guestCanRoll());
 export function hud(){const p=P[G.cur];$('cash').textContent=p.cash;$('bank').textContent=p.bank;$('pt').innerHTML='';$('pt').append(portrait(p));
   $('pt').firstChild.style.border='3px solid '+p.css;$('dice').disabled=!canAct()}
-$('dice').onclick=()=>{if(isGuest()&&guestCanRoll()&&!ov.firstChild){sendRollRequest().catch(showRemoteError);$('dice').disabled=true;return}if(G.idle&&G.wake&&!ov.firstChild){const w=G.wake;G.wake=null;w()}};
+$('dice').onclick=()=>{if(isGuest()&&guestCanRoll()&&!ov.firstChild){sendRollRequest().catch(error=>{showRemoteError(error);hud()});$('dice').disabled=true;return}if(G.idle&&G.wake&&!ov.firstChild){const w=G.wake;G.wake=null;w()}};
 $('hud').onclick=()=>{if(canAct()&&!ov.firstChild)bankDlg(P[G.cur])};
 $('ch').onclick=()=>{if(!canAct()||ov.firstChild)return;selectInventoryItem(P[G.cur]).catch(showRemoteError)};
 $('bc').onclick=()=>{if(!canAct()&&!isOnline()||ov.firstChild)return;const actions=isOnline()?[ib('🚪',async()=>{await leaveRoom();location.reload()}),ib('✖',clr)]:[ib('💾',()=>{save();clr()}),ib('🚪',()=>{location.reload()}),ib('✖',clr)];card(txt('Menu','',24),btns(actions))};

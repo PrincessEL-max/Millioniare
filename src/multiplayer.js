@@ -1,9 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 
-const EVENTS=['join','room-ready','game-start','state','progress','dice-roll','roll-request','prompt','answer','bank-request','bank-result','bank-withdraw-request','bank-withdraw-result','item-use-request','item-use-result'];
+const EVENTS=['join','room-ready','game-start','state','progress','dice-roll','roll-request','roll-accepted','prompt','answer','bank-request','bank-result','bank-withdraw-request','bank-withdraw-result','item-use-request','item-use-result'];
 let client,channel,role='offline',roomCode='',peerId='',peerCharacterId='',selfId=crypto.randomUUID();
-let handlers={},guestResolver,startResolver,rollResolver,roomReadyResolver,guestConnected=false,guestReady=false,lastGameStart;
+let handlers={},guestResolver,startResolver,rollResolver,roomReadyResolver,guestConnected=false,guestReady=false,guestTurnOpen=false,lastAcceptedRollRequestId='',pendingRollRequest=null,lastGameStart;
 const answers=new Map(),bankRequests=new Map(),withdrawRequests=new Map(),itemUseRequests=new Map();
+const ROLL_REQUEST_RETRY_MS=1200,ROLL_REQUEST_TIMEOUT_MS=15000;
 
 export const isOnline=()=>role!=='offline';
 export const isHost=()=>role==='host';
@@ -43,6 +44,20 @@ function setupChannel(code,nextRole){
     })
   });
 }
+function finishRollRequest(request,accepted){
+  if(pendingRollRequest!==request)return;
+  clearTimeout(request.timer);
+  pendingRollRequest=null;
+  if(!accepted)guestReady=guestTurnOpen;
+  request.resolve(accepted);
+}
+function acknowledgeRollRequest(id){
+  if(!id||!isGuest()||pendingRollRequest?.id!==id)return;
+  finishRollRequest(pendingRollRequest,true);
+}
+function acknowledgeRollRequestFromTurn(){
+  if(pendingRollRequest)finishRollRequest(pendingRollRequest,true);
+}
 function handleEvent(event,payload){
   if(role==='host'){
     if(event==='join'&&payload.clientId&&payload.clientId!==selfId){
@@ -51,7 +66,17 @@ function handleEvent(event,payload){
       broadcast('room-ready',{clientId:peerId}).catch(error=>handlers.onError?.(error));
       guestResolver?.(true);guestResolver=null;handlers.onGuestJoined?.();
     }else if(payload.clientId===peerId){
-      if(event==='roll-request'&&rollResolver&&payload.player===1){const resolve=rollResolver;rollResolver=null;resolve()}
+      if(event==='roll-request'&&payload.player===1&&typeof payload.id==='string'){
+        if(rollResolver){
+          const pending=rollResolver;rollResolver=null;
+          lastAcceptedRollRequestId=payload.id;pending.resolve();
+          broadcast('roll-accepted',{clientId:peerId,id:payload.id})
+            .catch(error=>handlers.onError?.(error));
+        }else if(payload.id===lastAcceptedRollRequestId){
+          broadcast('roll-accepted',{clientId:peerId,id:payload.id})
+            .catch(error=>handlers.onError?.(error));
+        }
+      }
       if(event==='answer'){const resolve=answers.get(payload.id);if(resolve){answers.delete(payload.id);resolve(!!payload.value)}}
       if(event==='bank-request')Promise.resolve(handlers.onBankRequest?.(payload)).catch(error=>handlers.onError?.(error));
       if(event==='bank-withdraw-result'){const resolve=withdrawRequests.get(payload.id);if(resolve){withdrawRequests.delete(payload.id);resolve(payload.amount)}}
@@ -62,9 +87,18 @@ function handleEvent(event,payload){
   }else if(role==='guest'){
     if(event==='room-ready'&&payload.clientId===selfId){handlers.onRoomReady?.();roomReadyResolver?.();roomReadyResolver=null}
     else if(event==='game-start'){lastGameStart=payload;handlers.onGameStart?.(payload);startResolver?.(payload);startResolver=null}
-    else if(event==='state'){guestReady=!!payload.awaitingRoll&&payload.cur===1;handlers.onState?.(payload)}
+    else if(event==='state'){
+      guestTurnOpen=!!payload.awaitingRoll&&payload.cur===1;
+      guestReady=guestTurnOpen;
+      if(!guestTurnOpen)acknowledgeRollRequestFromTurn();
+      handlers.onState?.(payload);
+    }
     else if(event==='progress')handlers.onProgress?.(payload)
-    else if(event==='dice-roll')Promise.resolve(handlers.onDiceRoll?.(payload)).catch(error=>handlers.onError?.(error))
+    else if(event==='dice-roll'){
+      if(payload.player===1)acknowledgeRollRequestFromTurn();
+      Promise.resolve(handlers.onDiceRoll?.(payload)).catch(error=>handlers.onError?.(error));
+    }
+    else if(event==='roll-accepted'&&payload.clientId===selfId)acknowledgeRollRequest(payload.id)
     else if(event==='prompt')handlers.onPrompt?.(payload);
     else if(event==='bank-result'){const resolve=bankRequests.get(payload.id);if(resolve){bankRequests.delete(payload.id);resolve(!!payload.accepted)}}
     else if(event==='bank-withdraw-request')handlers.onBankWithdraw?.(payload);
@@ -121,14 +155,36 @@ export function waitForRemoteRoll(state){
   if(!isHost())return Promise.reject(new Error('Hanya host yang dapat menunggu giliran remote.'));
   if(!peerId)return Promise.reject(new Error('Pemain kedua terputus dari room.'));
   return new Promise((resolve,reject)=>{
-    rollResolver=resolve;
+    rollResolver={resolve};
     broadcast('state',{...state,awaitingRoll:true}).catch(error=>{rollResolver=null;reject(error)});
   })
 }
 export function sendRollRequest(){
   if(!isGuest())return Promise.reject(new Error('Tidak ada giliran online yang aktif.'));
+  if(pendingRollRequest)return pendingRollRequest.promise;
+  if(!guestTurnOpen)return Promise.reject(new Error('Belum waktunya melempar dadu.'));
   guestReady=false;
-  return broadcast('roll-request',{clientId:selfId,player:1})
+  const request={id:crypto.randomUUID(),timer:null,resolve:null,promise:null};
+  request.promise=new Promise((resolve,reject)=>{
+    request.resolve=accepted=>{
+      if(accepted)resolve(true);
+      else reject(new Error('Permintaan lempar dadu tidak mendapat respons. Coba lagi.'));
+    };
+    const send=()=>{
+      if(pendingRollRequest!==request)return;
+      if(Date.now()-request.startedAt>=ROLL_REQUEST_TIMEOUT_MS){
+        finishRollRequest(request,false);
+        return;
+      }
+      broadcast('roll-request',{clientId:selfId,player:1,id:request.id})
+        .catch(error=>handlers.onError?.(error));
+      request.timer=setTimeout(send,ROLL_REQUEST_RETRY_MS);
+    };
+    request.startedAt=Date.now();
+    pendingRollRequest=request;
+    send();
+  });
+  return request.promise;
 }
 export function askRemote(title,body,yes,no,property){
   if(!isHost()||!peerId)return Promise.reject(new Error('Pemain kedua terputus dari room.'));
@@ -175,7 +231,8 @@ export function requestRemoteItemUse(itemIndex,action){
 }
 export async function leaveRoom(){
   const old=channel;channel=null;role='offline';peerId='';peerCharacterId='';roomCode='';
-  guestConnected=false;guestReady=false;lastGameStart=null;roomReadyResolver=null;
+  guestConnected=false;guestReady=false;guestTurnOpen=false;lastAcceptedRollRequestId='';lastGameStart=null;roomReadyResolver=null;
+  if(pendingRollRequest){const pending=pendingRollRequest;clearTimeout(pending.timer);pendingRollRequest=null;pending.resolve(false)}
   const waitingGuest=guestResolver;guestResolver=null;waitingGuest?.(false);
   answers.clear();bankRequests.clear();withdrawRequests.clear();itemUseRequests.clear();rollResolver=null;guestResolver=null;startResolver=null;
   if(old)await old.unsubscribe();
