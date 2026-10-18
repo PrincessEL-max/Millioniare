@@ -11,7 +11,7 @@ import { openShop } from '../ui/shop-ui.js';
 import { promptAuctionBid } from '../ui/auction-ui.js';
 import { playEffect, playPlayerLose, playPlayerWin } from './audio.js';
 import { createToolPreview } from '../ui/tool-preview.js';
-import { botCashTarget, chooseBotShopItem } from './bot.js';
+import { botBankWithdrawal, chooseBotShopItem } from './bot.js';
 import { SIDE_ICONS } from '../ui/side-panel-icons.js';
 
 const STORE_CATALOG=ITEMS.map(item=>({...item,name:item.n}));
@@ -307,7 +307,7 @@ export async function withdrawDlg(p){
     return;
   }
   if(!p.h){
-    const target=botCashTarget(p,P,L),amount=Math.min(p.bank,Math.max(0,target-p.cash));
+    const amount=botBankWithdrawal(p,P,L);
     p.cash+=amount;p.bank-=amount;if(amount>0)playEffect('bank');hud();return;
   }
   const result=await showBankDialog({cash:p.cash,bank:p.bank,mount:ov});

@@ -155,7 +155,11 @@ export function startOnlineGame(settings,state,mapId){
   return broadcast('game-start',{settings,state,mapId});
 }
 export function sendState(state){
-  if(isHost())return broadcast('state',state);
+  if(!isHost())return;
+  const payload=state.awaitingRoll
+    ?{...state,awaitingRoll:!!rollResolver,...(rollResolver?{rollTurnId:rollResolver.turnId}:{})}
+    :state;
+  return broadcast('state',payload);
 }
 export function sendProgress(progress){
   if(isHost())return broadcast('progress',progress);
@@ -172,7 +176,7 @@ export function waitForRemoteRoll(state){
     rollResolver=pending;
     const announce=()=>{
       if(rollResolver!==pending)return;
-      broadcast('state',{...state,awaitingRoll:true,rollTurnId:pending.turnId})
+      sendState({...state,awaitingRoll:true})
         .then(status=>{if(status!=='ok')handlers.onError?.(new Error(`Status pengiriman giliran online: ${status}`))})
         .catch(error=>handlers.onError?.(error));
       pending.timer=setTimeout(announce,ROLL_STATE_RETRY_MS);
@@ -249,7 +253,7 @@ export function requestRemoteItemUse(itemIndex,action){
   if(!isGuest())return Promise.resolve(false);
   const id=crypto.randomUUID(),wasReady=guestReady;guestReady=false;
   return new Promise((resolve,reject)=>{
-    itemUseRequests.set(id,accepted=>{if(!accepted)guestReady=wasReady;resolve(accepted)});
+    itemUseRequests.set(id,accepted=>{guestReady=wasReady&&guestTurnOpen;resolve(accepted)});
     broadcast('item-use-request',{clientId:selfId,id,itemIndex,action}).catch(error=>{
       itemUseRequests.delete(id);guestReady=wasReady;reject(error);
     });

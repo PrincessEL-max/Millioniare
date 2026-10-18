@@ -13,7 +13,7 @@ const petMultiplier=p=>p.pet?.kind==='cat-black'?2:p.pet?.kind==='cat-white'?0.5
 
 export function botReserve(p){
   const total=p.cash+p.bank;
-  return Math.max(250,Math.ceil(total*.08));
+  return Math.max(500,Math.ceil(total*.12));
 }
 
 function countOwnedGroup(p,lot,lots){
@@ -45,7 +45,14 @@ export function botCashTarget(p,players,lots){
   const reserve=botReserve(p);
   const affordable=uniqueLots(lots).filter(lot=>lot.o<0&&p.pet?.kind!=='baby')
     .map(lot=>lot.price*petMultiplier(p));
-  return reserve+Math.max(100,...affordable);
+  return Math.max(750,reserve+Math.min(1000,Math.max(100,...affordable)));
+}
+
+export function botBankWithdrawal(p,players,lots){
+  if(p.bank<=0)return 0;
+  const cashTarget=botCashTarget(p,players,lots);
+  const target=p.cash<500?750:cashTarget;
+  return Math.min(p.bank,Math.max(0,target-p.cash));
 }
 
 function stateKey(state){
@@ -235,19 +242,17 @@ export function botItemValue(id,p,ctx){
     return amount*.85+(p.cash<reserve?180:0);
   }
   if(id==='remote-control')return chooseBotRoll(p,ctx)!==null?300:-Infinity;
-  if(id==='thief')return Math.max(0,...rivals.map(rival=>Math.floor(rival.cash*.25)))*1.4-125;
+  if(id==='thief'){
+    const stolen=Math.max(0,...rivals.map(rival=>Math.floor(rival.cash*.25)));
+    return stolen>=75?stolen*1.4-125:-Infinity;
+  }
   if(id==='toolkit'){
     const ready=uniqueLots(ctx.lots).some(lot=>shouldUpgradeLot(p,lot,0,ctx.players,ctx.lots,{free:true}));
     return ready?300:-Infinity;
   }
   if(id==='lawyer'){
-    const chances=predictedLandingOdds(p,ctx);
-    const value=uniqueLots(ctx.lots).reduce((sum,lot)=>{
-      if(lot.o<0||lot.o===p.i)return sum;
-      const tile=ctx.lots.indexOf(lot),chance=chances.get(tile)||0;
-      return sum+chance*(lot.price+lot.lv*100);
-    },0);
-    return value>200?value*3-325:-Infinity;
+    const lot=ctx.lots[p.pos];
+    return lot&&lot.o>=0&&lot.o!==p.i?Math.max(0,lot.price+lot.lv*100-325):-Infinity;
   }
   if(id==='demolition'){
     const target=chooseBotTarget(p,id,ctx);
@@ -273,4 +278,8 @@ export function chooseBotShopItem(stock,p,ctx){
       ?p.cash+p.bank-choice.item.price>=reserve
       :p.cash-choice.item.price>=reserve))
     .sort((a,b)=>b.value-a.value)[0]?.item??null;
+}
+
+export function botShouldUseItem(id,p,ctx){
+  return botItemValue(id,p,ctx)>0;
 }

@@ -22,7 +22,7 @@ import { createItemRemote } from '../tools/item-remote.js';
 import { createItemThief } from '../tools/item-thief.js';
 import { showBankDialog } from '../Bank/bank-dialog.js';
 import { playEffect, playHammerTuk, playPetArrival, playPlayerTurn, startGameMusic, stopGameMusic } from './audio.js';
-import { botCashTarget, botReserve, chooseBotRoll, chooseBotTarget, shouldBuyLot, shouldUpgradeLot } from './bot.js';
+import { botCashTarget, botReserve, botShouldUseItem, chooseBotRoll, chooseBotTarget, shouldBuyLot, shouldUpgradeLot } from './bot.js';
 import babyUrl from '../pets-pack/models/baby.glb?url';
 import catBlackUrl from '../pets-pack/models/cat_black.glb?url';
 import catWhiteUrl from '../pets-pack/models/cat_white.glb?url';
@@ -302,9 +302,36 @@ function validNextMove(move,p){
   return move&&move.from===p.pos&&move.prev===p.prev&&Number.isInteger(move.to)&&
     (LINKS[p.pos]||[]).includes(move.to);
 }
-function pay(p,a,to){const t=p.cash+p.bank;
-  if(t>=a){const c=Math.min(p.cash,a);p.cash-=c;p.bank-=a-c;if(to)to.cash+=a;return true}
-  if(to)to.cash+=t;p.cash=p.bank=0;p.alive=false;p.m.visible=false;L.forEach((l,i)=>{if(l.o==p.i){l.o=-1;l.lv=0;drawLot(i);setB(i)}});return false}
+function pay(p,amount,to){
+  const sold=[];
+  const saleValue=lot=>lot.price+lot.buildCosts.slice(1,lot.lv+1).reduce((sum,cost)=>sum+cost,0);
+  const assets=()=>[...new Set(L)].map((lot,index)=>({lot,index}))
+    .filter(({lot})=>lot&&!lot.destroyed&&lot.o===p.i)
+    .map(asset=>({...asset,value:saleValue(asset.lot)}))
+    .sort((a,b)=>a.value-b.value);
+  while(p.cash+p.bank<amount+200){
+    const asset=assets()[0];
+    if(!asset)break;
+    const {lot,index,value}=asset;
+    lot.o=-1;lot.lv=0;p.cash+=value;sold.push(lot.id);
+    setB(index);drawLot(index);
+  }
+  const available=p.cash+p.bank;
+  if(available<amount){
+    if(to)to.cash+=available;
+    p.cash=p.bank=0;p.alive=false;p.m.visible=false;
+    L.forEach((lot,index)=>{if(lot?.o===p.i){lot.o=-1;lot.lv=0;drawLot(index);setB(index)}});
+    return {solvent:false,paid:available,sold};
+  }
+  if(available>=amount+200&&p.cash<200){
+    const reserve=200-p.cash;p.cash+=reserve;p.bank-=reserve;
+  }
+  const cashPayment=Math.min(Math.max(0,p.cash-200),amount);
+  p.cash-=cashPayment;
+  p.bank-=amount-cashPayment;
+  if(to)to.cash+=amount;
+  return {solvent:true,paid:amount,sold};
+}
 async function chooseToolTarget(p,id,message){
   if(p.h){
     setCameraControlsLocked(true);
@@ -611,7 +638,9 @@ async function useItem(p,index,action){
   focusOverride=p.m.position.clone();
   const restoreZoom=beginToolZoom();
   try{
-    return await performItemUse(p,index,action);
+    const used=await performItemUse(p,index,action);
+    if(used&&isHost())await sendState(snapshot(G.cur!==myPlayerIndex()));
+    return used;
   }finally{
     restoreZoom();
     focusOverride=previousFocus;
@@ -750,11 +779,14 @@ async function land(p){const t=T[p.pos],l=L[p.pos];
     }else{
       const o=P[l.o],r=petCost(p,complexRent(l,l.o));
       if(p.pet?.kind==='cat-black'||p.pet?.kind==='cat-white')playPetArrival(p.pet.kind);
-      const available=p.cash+p.bank,paid=Math.min(available,r),solvent=pay(p,r,o);
+      const payment=pay(p,r,o),soldMessage=payment.sold.length
+        ?` Lahan dijual: ${payment.sold.join(', ')}.`
+        :'';
       hud();
-      await playerEvent(p,'sad',`SEWA HILANG $${paid}`,`Dibayarkan kepada ${o.n}`);
-      if(paid>0)await playerEvent(o,'happy',`SEWA DITERIMA $${paid}`,`Dari ${p.n}`);
-      if(!solvent)await ban(portrait(p,'sad'),p.css,p.n,'BANGKRUT 💥',1400);
+      await playerEvent(p,'sad',`SEWA HILANG $${payment.paid}`,
+        `Dibayarkan kepada ${o.n}.${soldMessage}`);
+      if(payment.paid>0)await playerEvent(o,'happy',`SEWA DITERIMA $${payment.paid}`,`Dari ${p.n}`);
+      if(!payment.solvent)await ban(portrait(p,'sad'),p.css,p.n,'BANGKRUT 💥',1400);
     }
   }
 }
@@ -906,9 +938,7 @@ setNetworkHandlers({
     if(id==='lawyer'&&action.tile!==p.pos)return false;
     if(!['computer','remote-control','thief','toolkit','demolition'].includes(id)&&!Number.isInteger(action.tile))return false;
     if(isStreetSign(id)&&action.dir!==undefined)return false;
-    const accepted=await useItem(p,itemIndex,action);
-    if(accepted)await sendState(snapshot(true));
-    return accepted;
+    return useItem(p,itemIndex,action);
   },
   onError:error=>console.error('Online game error:',error)
 });
@@ -931,8 +961,10 @@ async function main(){
       }else await sleep(500);
       if(!p.h){
         for(let index=p.inv.length-1;index>=0;index--)
-          if(['computer','remote-control','thief','lawyer','toolkit','broom','demolition','for-rent','bomb','stop-sign'].includes(p.inv[index].id)||isStreetSign(p.inv[index].id))
+          if((['computer','remote-control','thief','lawyer','toolkit','broom','demolition','for-rent','bomb','stop-sign'].includes(p.inv[index].id)||isStreetSign(p.inv[index].id))&&
+            botShouldUseItem(p.inv[index].id,p,G.botContext())){
             await useItem(p,index);
+          }
       }
       const fixed=p.nextRoll;p.nextRoll=null;
       focusCameraOnPlayer(p);
@@ -940,7 +972,9 @@ async function main(){
       const v=await rollDie(p,fixed,value=>{
         sendDiceRoll(p.i,value)?.catch(error=>console.error('Online dice sync error:',error));
       });await ban(face(v),'#9fb0c2',String(v),'GO',900);
-      await step(p,v);die.visible=false;await collectPet(p,p.pos);await land(p);check()}
+      await step(p,v);
+      if(isHost())await sendState(snapshot());
+      die.visible=false;await collectPet(p,p.pos);await land(p);check()}
     finishPetTurn(p);
     advancePetSpawner();
     if(isHost())await sendState(snapshot());
