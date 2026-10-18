@@ -1,9 +1,9 @@
-import { CASH0, cvs, hex } from './config.js';
+import { CASH0, hex } from './config.js';
 import { tp } from './map.js';
 import { scene } from './scene.js';
 import { L, drawLot } from './world.js';
-import { createChibi } from '../Character/chibi.js';
-import { createChibiBoy } from '../Character/chibi-boy.js';
+import { createAvatar } from '../Character/avatar-kit.js';
+import { avatarPortraitSVG } from '../ui/avatar-portraits.js';
 import { CHARACTERS } from '../ui/menu-data.js';
 import { ITEMS } from './items.js';
 
@@ -23,6 +23,7 @@ const STYLES=[
   {c:0x9c27b0,sk:0xf1c7a5,hr:0x402020,bd:1},
   {c:0x00acc1,sk:0xd9a27f,hr:0x151515,af:1}
 ];
+const DEFAULT_AVATARS=['princess','witch','pilot','fairy','prince','builder'];
 export let P=[];
 let settings={humanCount:1,computerCount:2,cash:CASH0,bank:CASH0};
 export function getPlayerSettings(){return {...settings}}
@@ -40,27 +41,23 @@ export function configurePlayers(next){
   settings={...next,playerIds};
   P=STYLES.slice(0,total).map((style,i)=>{
     const profile=CHARACTERS.find(character=>character.id===playerIds[i]);
-    const p={...style,n:profile?.name||`Player ${i+1}`,characterId:profile?.id||null,i,h:i<settings.humanCount,
+    const avatarType=profile?.avatarType||DEFAULT_AVATARS[i];
+    const p={...style,n:profile?.name||`Player ${i+1}`,characterId:profile?.id||null,avatarType,i,h:i<settings.humanCount,
       css:hex(style.c),skc:hex(style.sk),hrc:hex(style.hr),pos:-1,prev:null,
       cash:settings.cash,bank:settings.bank,alive:true,
       inv:(profile?.items||[]).map(id=>{const item=ITEMS.find(entry=>entry.id===id);return item?{id:item.id,n:item.n,icon:item.icon}:null}).filter(Boolean),
       hospitalTurns:0,nextRoll:null,nextMove:null,pet:null};
     const scale=total>3?.38:.42;
-    p.m=profile?profile.make():i%2===0
-      ?createChibi({hair:style.hr,skin:style.sk,sweater:style.c})
-      :createChibiBoy({outfit:i%4===1?'hoodie':'uniform',hair:style.hr,skin:style.sk,top:style.c});
+    p.m=profile?profile.make():createAvatar(avatarType,{wave:false});
     p.m.scale.setScalar(scale);scene.add(p.m);place(p);return p;
   });
 }
-export function portrait(p){const c=cvs(96),g=c.getContext('2d'),e=(x,y,a,b,f)=>{g.beginPath();g.ellipse(x,y,a,b,0,0,Math.PI*2);g.fillStyle=f;g.fill()};
-  g.fillStyle=p.css;g.fillRect(0,0,96,96);
-  if(p.af)e(48,40,36,36,p.hrc);if(p.bob)e(48,56,36,42,p.hrc);e(48,56,26,32,p.skc);
-  g.fillStyle=p.hrc;g.beginPath();g.ellipse(48,34,28,16,0,Math.PI,0);g.fill();
-  [38,58].forEach(x=>{e(x,54,6,5,'#fff');e(x,55,2.8,2.8,'#2b1a10')});
-  g.strokeStyle=p.hrc;g.lineWidth=3;g.beginPath();g.moveTo(30,46);g.lineTo(44,48);g.moveTo(66,46);g.lineTo(52,48);g.stroke();
-  if(p.bd){g.fillStyle=p.hrc;g.beginPath();g.ellipse(48,72,23,16,0,0,Math.PI);g.fill()}
-  g.strokeStyle='#d98a74';g.lineWidth=3;g.beginPath();g.moveTo(41,76);g.lineTo(55,76);g.stroke();
-  c.style.cssText='width:62px;height:62px;border-radius:12px;display:block';return c}
+export function portrait(p,mood='neutral'){
+  const image=document.createElement('img');
+  image.src=`data:image/svg+xml;charset=utf-8,${encodeURIComponent(avatarPortraitSVG(p.avatarType,p.css,{mood}))}`;
+  image.alt=p.n||'Player';image.style.cssText='width:62px;height:62px;border-radius:12px;display:block';
+  return image;
+}
 export const place=p=>{
   const [x,z]=tp(p.pos);
   if(p.pos<0){

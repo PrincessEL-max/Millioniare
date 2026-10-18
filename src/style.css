@@ -18,10 +18,26 @@ body.map-picking #hud,body.map-picking #side,body.map-picking #street,body.map-p
 #side{position:absolute;z-index:2;top:8px;right:8px;bottom:8px;width:76px;background:var(--sp);border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:space-evenly}
 #side button{width:62px;height:62px;border:0;border-radius:14px;background:none;font-size:46px;padding:0;cursor:pointer}
 #side button:disabled{opacity:.82}
+#side #bc svg,#side #ch svg{display:block;width:100%;height:100%;overflow:visible;filter:drop-shadow(0 3px 3px #0004)}
+#side #bc,#side #ch{transition:transform .12s}
+#side #bc:active,#side #ch:active{transform:scale(.93)}
+#side #pt img{box-sizing:border-box;border-radius:12px}
 #side #dice{width:72px;height:82px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:#fff;border:2px solid #d62f2f;box-shadow:0 3px 8px #0005}
 #side #dice canvas{width:48px!important;height:48px!important;border-radius:10px!important}
 #side #dice::after{content:"LEMPAR DADU";color:#b51e1e;font-size:9px;font-weight:900;line-height:1;letter-spacing:.03em}
 #ov{position:absolute;z-index:3;top:0;bottom:0;left:0;right:92px;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.star-game-overlay{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;box-sizing:border-box;padding:12px;background:rgba(8,18,36,.78)}
+.star-game-container{position:relative;width:min(94vw,880px);height:min(82vh,640px);min-height:min(420px,78vh);overflow:hidden;border:3px solid #ffe082;border-radius:22px;box-shadow:0 16px 60px #0009}
+.player-event-layer{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;pointer-events:none;animation:player-event-in .22s ease-out both}
+.player-event-card{position:relative;display:flex;align-items:center;gap:clamp(14px,3vw,32px);width:min(740px,calc(100vw - 36px));min-height:clamp(124px,24vw,210px);padding:clamp(14px,3vw,26px);box-sizing:border-box;overflow:hidden;border:2px solid #ffffffaa;border-radius:clamp(22px,5vw,38px);background:radial-gradient(ellipse at 24% 50%,#bfc7d5 0,#8c96a9 44%,#59657d 100%);box-shadow:0 12px 38px #07152a88,inset 0 0 24px #fff3;color:#fff}
+.player-event-card::before{content:"";position:absolute;inset:-80%;background:repeating-conic-gradient(from 5deg at 27% 50%,#fff0 0deg 9deg,#ffffff24 10deg 12deg,#fff0 13deg 22deg);animation:player-event-spin 16s linear infinite}
+.is-happy .player-event-card{background:radial-gradient(ellipse at 24% 50%,#b8ed73 0,#6dbc36 46%,#35953f 100%)}
+.player-event-avatar{position:relative;z-index:1;flex:none;width:clamp(88px,19vw,158px)!important;height:clamp(88px,19vw,158px)!important;border:3px solid #fff;border-radius:24px!important;box-shadow:0 5px 18px #16321f88}
+.player-event-copy{position:relative;z-index:1;display:flex;flex:1;flex-direction:column;gap:8px;min-width:0;text-shadow:0 2px 4px #14211e88}
+.player-event-copy strong{font-size:clamp(20px,5vw,40px);font-weight:950;letter-spacing:.02em;line-height:1.05}
+.player-event-copy span{font-size:clamp(16px,3.5vw,28px);font-weight:800;line-height:1.2}
+@keyframes player-event-in{from{opacity:0;transform:translateY(10px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes player-event-spin{to{transform:rotate(360deg)}}
 .map-picker{box-sizing:border-box;width:min(600px,94%);max-height:calc(100dvh - 32px);overflow:auto;display:grid;gap:12px;padding:20px;border:1px solid #ffffff66;border-radius:22px;background:var(--gl);color:#fff;text-align:center;font-style:normal;letter-spacing:0;box-shadow:0 6px 22px #0006;pointer-events:auto}
 .map-picker h2,.map-picker p{margin:0}
 .map-picker h2{font-size:clamp(22px,4vw,30px)}

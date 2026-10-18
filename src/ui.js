@@ -1,6 +1,6 @@
 import { $, CASH0, cvs, sleep } from './config.js';
 import { LINKS, MAP_ID, tp } from './map.js';
-import { L, drawLot, setB } from './world.js';
+import { L, drawLot, setB, setLotDestroyed } from './world.js';
 import { ITEMS } from './items.js';
 import { configurePlayers, getPlayerSettings, P, place, portrait } from './players.js';
 import { answerRemote, answerRemoteWithdrawal, askRemote, createRoom, guestCanRoll, isGuest, isHost, isOnline, joinRoom, leaveRoom, myPlayerIndex, requestRemoteWithdrawal, sendRollRequest, transferRemoteBank, waitForGuest } from './multiplayer.js';
@@ -8,11 +8,44 @@ import { showBankDialog } from '../Bank/bank-dialog.js';
 import { createPropertyCard } from '../ui/property-card.js';
 import { propertyPreview } from '../ui/property-preview.js';
 import { openShop } from '../ui/shop-ui.js';
-import { playEffect, playPlayerWin } from './audio.js';
+import { promptAuctionBid } from '../ui/auction-ui.js';
+import { playEffect, playPlayerLose, playPlayerWin } from './audio.js';
 import { createToolPreview } from '../ui/tool-preview.js';
 import { botCashTarget, chooseBotShopItem } from './bot.js';
+import { SIDE_ICONS } from '../ui/side-panel-icons.js';
 
 const STORE_CATALOG=ITEMS.map(item=>({...item,name:item.n}));
+let playerEventQueue=Promise.resolve();
+export function playerEvent(p,mood,title,message){
+  const show=async()=>{
+    const root=document.getElementById('app');
+    if(!root)throw new Error('Kontainer permainan tidak ditemukan untuk notifikasi pemain.');
+    const layer=document.createElement('div');
+    layer.className=`player-event-layer ${mood==='happy'?'is-happy':'is-sad'}`;
+    layer.setAttribute('role','status');
+    layer.setAttribute('aria-live','assertive');
+    const card=document.createElement('div');
+    card.className='player-event-card';
+    const avatar=portrait(p,mood);
+    avatar.className='player-event-avatar';
+    const copy=document.createElement('div');
+    copy.className='player-event-copy';
+    const heading=document.createElement('strong');
+    heading.textContent=title;
+    const detail=document.createElement('span');
+    detail.textContent=message;
+    copy.append(heading,detail);
+    card.append(avatar,copy);
+    layer.append(card);
+    root.append(layer);
+    const play=mood==='happy'?playPlayerWin(p):playPlayerLose(p);
+    await Promise.all([play,new Promise(resolve=>setTimeout(resolve,850))]);
+    layer.remove();
+  };
+  const result=playerEventQueue.then(show);
+  playerEventQueue=result.catch(error=>{console.error('Notifikasi pemain gagal ditampilkan:',error)});
+  return playerEventQueue;
+}
 function randomStoreStock(p){
   const available=STORE_CATALOG.filter(item=>!p.inv.some(owned=>owned.id===item.id));
   for(let i=available.length-1;i>0;i--){
@@ -26,6 +59,8 @@ function randomStoreStock(p){
 
 // ---------- UI ----------
 const ov=$('ov');
+$('bc').innerHTML=SIDE_ICONS.briefcase;
+$('ch').innerHTML=SIDE_ICONS.chest;
 export const G={cur:0,over:false,idle:false,wake:null};
 const clr=()=>{ov.innerHTML=''};
 let itemUseHandler=null,boardTargetRequest=null;
@@ -110,16 +145,14 @@ export function chooseDieValue(){
     card(txt('Remote Control','Klik dadu untuk memilih angka, lalu tekan Go.',22,16),row);
   });
 }
-export function chooseAuctionBid(p,property,bid,minBid){
-  const body=`Tawaran tertinggi: $${bid}<br>Tawaran minimum: $${minBid}`;
+export function chooseAuctionBid(p,property,bid,minBid,leader=-1){
+  const body=`Tawaran tertinggi: $${bid}<br>Tawaran minimum: $${minBid}<br>Penawar terakhir: ${leader}`;
   if(isHost()&&p.i!==myPlayerIndex())return askRemote(`Lelang ${property}`,body,`Bid $${minBid}`,'Pass');
   if(!p.h)return Promise.resolve(false);
-  return new Promise(resolve=>{
-    const heading=txt(`Lelang ${property}`,body,22,16);
-    const input=document.createElement('input');input.type='number';input.min=String(minBid);input.max=String(p.cash);input.step='100';input.value=String(minBid);input.setAttribute('aria-label','Tawaran lelang');
-    const bidButton=wide('Tawar',()=>{const value=input.valueAsNumber;if(Number.isSafeInteger(value)&&value>=minBid&&value<=p.cash&&(value-minBid)%100===0){clr();resolve(value)}});
-    const passButton=wide('Pass',()=>{clr();resolve(false)});
-    card(heading,input,btns([bidButton,passButton]));
+  return promptAuctionBid({
+    mount:ov,property,bid,minBid,leader,
+    activePlayer:p,
+    players:P.filter(player=>player.alive)
   });
 }
 export function ask(img,a,b,y,n,s2=22){
@@ -204,6 +237,21 @@ export function showRemotePrompt({id,title,body,yes,no,property}){
     });
     return;
   }
+  if(title.startsWith('Lelang ')){
+    const bid=body.match(/Tawaran tertinggi: \$(\d+)/);
+    const minBid=body.match(/Tawaran minimum: \$(\d+)/);
+    const lastBidder=body.match(/Penawar terakhir: (-?\d+)/);
+    const activePlayer=P.find(player=>player.i===myPlayerIndex());
+    if(bid&&minBid&&activePlayer){
+      promptAuctionBid({
+        mount:ov,property:title.slice('Lelang '.length),
+        bid:Number(bid[1]),minBid:Number(minBid[1]),
+        leader:lastBidder?Number(lastBidder[1]):-1,
+        activePlayer,players:P.filter(player=>player.alive)
+      }).then(value=>answerRemote(id,value!==false).catch(showRemoteError));
+      return;
+    }
+  }
   const message=txt(title,body,24,20);
   const choices=[ib(yes,()=>{clr();answerRemote(id,true).catch(showRemoteError)})];
   if(no)choices.push(ib(no,()=>{clr();answerRemote(id,false).catch(showRemoteError)}));
@@ -263,7 +311,7 @@ $('dice').onclick=()=>{if(isGuest()&&guestCanRoll()&&!ov.firstChild){sendRollReq
 $('hud').onclick=()=>{if(canAct()&&!ov.firstChild)bankDlg(P[G.cur])};
 $('ch').onclick=()=>{if(!canAct()||ov.firstChild)return;selectInventoryItem(P[G.cur]).catch(showRemoteError)};
 $('bc').onclick=()=>{if(!canAct()&&!isOnline()||ov.firstChild)return;const actions=isOnline()?[ib('🚪',async()=>{await leaveRoom();location.reload()}),ib('✖',clr)]:[ib('💾',()=>{save();clr()}),ib('🚪',()=>{location.reload()}),ib('✖',clr)];card(txt('Menu','',24),btns(actions))};
-function save(){try{localStorage.setItem('mt3d',JSON.stringify({mapVersion:10,mapId:MAP_ID,settings:getPlayerSettings(),cur:G.cur,P:P.map(p=>({pos:p.pos,prev:p.prev,nextMove:p.nextMove,cash:p.cash,bank:p.bank,alive:p.alive,inv:p.inv,pet:p.pet})),L:L.map(l=>l&&{o:l.o,lv:l.lv}),extra:G.saveExtra?.()}))}catch(e){}}
+function save(){try{localStorage.setItem('mt3d',JSON.stringify({mapVersion:10,mapId:MAP_ID,settings:getPlayerSettings(),cur:G.cur,P:P.map(p=>({pos:p.pos,prev:p.prev,nextMove:p.nextMove,cash:p.cash,bank:p.bank,alive:p.alive,inv:p.inv,pet:p.pet})),L:L.map(l=>l&&{o:l.o,lv:l.lv,destroyed:!!l.destroyed}),extra:G.saveExtra?.()}))}catch(e){}}
 export function load(){try{const q=JSON.parse(localStorage.getItem('mt3d'));if(!q)return false;
   if(q.mapVersion!==10||(q.mapId??6)!==MAP_ID||!q.settings||!Array.isArray(q.P)||!Array.isArray(q.L)||q.L.length!==L.length||q.L.some((a,i)=>a&&!L[i])){
     localStorage.removeItem('mt3d');return false}
@@ -278,25 +326,26 @@ export function load(){try{const q=JSON.parse(localStorage.getItem('mt3d'));if(!
       const from=tp(P[i].prev),to=tp(P[i].pos);P[i].m.rotation.y=Math.atan2(to[0]-from[0],to[1]-from[1]);
     }
   });
-  q.L.forEach((a,i)=>{if(a){L[i].o=a.o;L[i].lv=a.lv;drawLot(i);setB(i)}});G.loadExtra?.(q.extra);return true}catch(e){return false}}
+  q.L.forEach((a,i)=>{if(a){L[i].o=a.o;L[i].lv=a.lv;if(a.destroyed)setLotDestroyed(i);drawLot(i);setB(i)}});G.loadExtra?.(q.extra);return true}catch(e){return false}}
 
 async function remoteShop(p,stock){
   for(const item of stock){
     if(p.cash<item.price)continue;
     const buy=await askRemote('Toko Bus',`${item.name}<br>${item.description}<br>Harga: ${item.price}`,'Beli','Lewati');
-    if(buy){playEffect('bank');p.cash-=item.price;p.inv.push({id:item.id,n:item.name,icon:item.icon});playPlayerWin(p);hud()}
+    if(buy){playEffect('bank');p.cash-=item.price;p.inv.push({id:item.id,n:item.name,icon:item.icon});await playerEvent(p,'happy','ALAT DIBELI',`${item.name} seharga $${item.price}`);hud()}
   }
 }
-function aiShop(p){
+async function aiShop(p){
   const context=G.botContext?.();
   if(!context)return;
   const stock=STORE_CATALOG.filter(item=>!p.inv.some(owned=>owned.id===item.id));
   const item=chooseBotShopItem(stock,p,context);
   if(!item)return;
-  p.cash-=item.price;p.inv.push({id:item.id,n:item.name,icon:item.icon});playPlayerWin(p);hud();
+  p.cash-=item.price;p.inv.push({id:item.id,n:item.name,icon:item.icon});hud();
+  await playerEvent(p,'happy','ALAT DIBELI',`${item.name} seharga $${item.price}`);
 }
 export async function shop(p){
-  if(!p.h){aiShop(p);return}
+  if(!p.h){await aiShop(p);return}
   if(!STORE_CATALOG.length){await ban(portrait(p),p.css,'Toko Bus','Barang belum diisi',1200);return}
   const stock=randomStoreStock(p);
   if(!stock.length){await ban(portrait(p),p.css,'Toko Bus','Tidak ada alat tersedia',1200);return}
@@ -314,9 +363,10 @@ export async function shop(p){
       onBuy:item=>{
         const catalogItem=ITEMS.find(entry=>entry.id===item.id);
         if(p.cash<item.price||p.inv.some(owned=>owned.id===item.id)||!catalogItem)return false;
-        p.cash-=item.price;p.inv.push({id:item.id,n:item.name,icon:catalogItem.icon});playPlayerWin(p);hud();return true;
+        p.cash-=item.price;p.inv.push({id:item.id,n:item.name,icon:catalogItem.icon});void playerEvent(p,'happy','ALAT DIBELI',`${item.name} seharga $${item.price}`);hud();return true;
       }
     });
+    await playerEventQueue;
   }finally{
     preview.destroy();clr();
   }

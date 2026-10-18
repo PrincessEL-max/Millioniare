@@ -11,17 +11,12 @@ export const cam=new THREE.OrthographicCamera(-1,1,1,-1,.1,150);
 export const panOffset=new THREE.Vector3();
 export const cameraOffset=new THREE.Vector3(12,8.5,12);
 let worldBounds=null;
-const MIN_CAMERA_PITCH=.4;
-const cameraDistance=cameraOffset.length();
-let cameraYaw=Math.atan2(cameraOffset.x,cameraOffset.z);
-let cameraPitch=Math.asin(cameraOffset.y/cameraDistance);
 let panBounds=null;
-export function orbitCamera(dx,dy){
-  cameraYaw+=dx*.008;
-  cameraPitch=Math.max(MIN_CAMERA_PITCH,Math.min(1.4,cameraPitch-dy*.006));
-  const horizontal=cameraDistance*Math.cos(cameraPitch);
-  cameraOffset.set(Math.sin(cameraYaw)*horizontal,cameraDistance*Math.sin(cameraPitch),Math.cos(cameraYaw)*horizontal);
-  setZoom(cam.zoom);
+let cameraControlsLocked=false;
+export function setCameraControlsLocked(locked){
+  cameraControlsLocked=locked;
+  if(locked){drag=null;touchOrbit=null;touches.clear();canvas.style.cursor='default'}
+  else canvas.style.cursor='grab';
 }
 function rs(){const w=$('app').clientWidth,h=$('app').clientHeight,a=w/h,hh=Math.max(5.2,6.5/a);renderer.setSize(w,h,false);
   cam.left=-hh*a;cam.right=hh*a;cam.top=hh;cam.bottom=-hh;cam.updateProjectionMatrix()}
@@ -41,14 +36,24 @@ function minimumWorldZoom(){
   return Math.max(MIN_ZOOM,2*reachX/(worldBounds.maxX-worldBounds.minX),
     2*reachZ/(worldBounds.maxZ-worldBounds.minZ));
 }
-function setZoom(value){
-  cam.zoom=Math.max(minimumWorldZoom(),Math.min(MAX_ZOOM,value));
+function setZoom(value,maxZoom=MAX_ZOOM){
+  cam.zoom=Math.max(minimumWorldZoom(),Math.min(maxZoom,value));
   cam.updateProjectionMatrix();
 }
-export const zoomBy=factor=>setZoom(cam.zoom*factor);
-export const zoomIn=()=>setZoom(cam.zoom*1.2);
-export const zoomOut=()=>setZoom(cam.zoom/1.2);
-export const resetZoom=()=>setZoom(1);
+export function beginToolZoom(){
+  const previousZoom=cam.zoom;
+  setZoom(previousZoom*2,MAX_ZOOM*2);
+  let restored=false;
+  return ()=>{
+    if(restored)return;
+    restored=true;
+    setZoom(previousZoom);
+  };
+}
+export const zoomBy=factor=>{if(!cameraControlsLocked)setZoom(cam.zoom*factor)};
+export const zoomIn=()=>{if(!cameraControlsLocked)setZoom(cam.zoom*1.2)};
+export const zoomOut=()=>{if(!cameraControlsLocked)setZoom(cam.zoom/1.2)};
+export const resetZoom=()=>{if(!cameraControlsLocked)setZoom(1)};
 export function setWorldBounds(bounds,expandedBounds=bounds){
   worldBounds=bounds;
   panBounds=expandedBounds;
@@ -75,7 +80,7 @@ $('zoomIn').addEventListener('click',zoomIn);
 $('zoomOut').addEventListener('click',zoomOut);
 $('zoomReset').addEventListener('click',resetZoom);
 const canvas=$('c');
-let drag=null,mouseOrbit=null,touchOrbit=null;
+let drag=null,touchOrbit=null;
 const touches=new Map();
 canvas.style.cursor='grab';
 canvas.style.touchAction='none';
@@ -88,50 +93,45 @@ function startPan(id,x,y){
   drag={id,x,y,offset:panOffset.clone(),right,groundUp,
     scale:(cam.top-cam.bottom)/(cam.zoom*canvas.clientHeight)};
 }
-function beginTouchOrbit(){
+function beginTouchZoom(){
   const ids=[...touches.keys()].slice(0,2),[a,b]=ids.map(id=>touches.get(id));
-  touchOrbit={ids,x:(a.x+b.x)/2,y:(a.y+b.y)/2,distance:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y))};
+  touchOrbit={ids,distance:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y))};
 }
 canvas.addEventListener('pointerdown',e=>{
+  if(cameraControlsLocked){e.preventDefault();return}
   if(e.pointerType==='touch'){
     e.preventDefault();
     touches.set(e.pointerId,{x:e.clientX,y:e.clientY});
     canvas.setPointerCapture(e.pointerId);
-    if(touches.size>=2){drag=null;beginTouchOrbit();canvas.style.cursor='grabbing'}
+    if(touches.size>=2){drag=null;beginTouchZoom();canvas.style.cursor='grabbing'}
     else startPan(e.pointerId,e.clientX,e.clientY);
     return;
   }
-  if(e.button===2){
-    e.preventDefault();mouseOrbit={id:e.pointerId,x:e.clientX,y:e.clientY};
-    canvas.setPointerCapture(e.pointerId);canvas.style.cursor='grabbing';return;
-  }
+  if(e.button===2){e.preventDefault();return}
   if(e.button!==0)return;
   e.preventDefault();startPan(e.pointerId,e.clientX,e.clientY);
   canvas.setPointerCapture(e.pointerId);canvas.style.cursor='grabbing';
 });
 canvas.addEventListener('pointermove',e=>{
+  if(cameraControlsLocked)return;
   if(touches.has(e.pointerId)){
     touches.set(e.pointerId,{x:e.clientX,y:e.clientY});
     if(touches.size>=2){
-      if(!touchOrbit)beginTouchOrbit();
+      if(!touchOrbit)beginTouchZoom();
       const [a,b]=touchOrbit.ids.map(id=>touches.get(id));
       if(!a||!b)return;
-      const x=(a.x+b.x)/2,y=(a.y+b.y)/2,distance=Math.max(1,Math.hypot(a.x-b.x,a.y-b.y));
-      orbitCamera(x-touchOrbit.x,y-touchOrbit.y);
+      const distance=Math.max(1,Math.hypot(a.x-b.x,a.y-b.y));
       zoomBy(distance/touchOrbit.distance);
-      touchOrbit={...touchOrbit,x,y,distance};
+      touchOrbit={...touchOrbit,distance};
       return;
     }
-  }
-  if(mouseOrbit?.id===e.pointerId){
-    orbitCamera(e.clientX-mouseOrbit.x,e.clientY-mouseOrbit.y);
-    mouseOrbit.x=e.clientX;mouseOrbit.y=e.clientY;return;
   }
   if(!drag||drag.id!==e.pointerId)return;
   const dx=e.clientX-drag.x,dy=e.clientY-drag.y;
   panOffset.copy(drag.offset).addScaledVector(drag.right,-dx*drag.scale).addScaledVector(drag.groundUp,dy*drag.scale);
 });
 const endDrag=e=>{
+  if(cameraControlsLocked)return;
   if(touches.has(e.pointerId)){
     touches.delete(e.pointerId);touchOrbit=null;drag=null;
     if(touches.size===1){
@@ -140,15 +140,15 @@ const endDrag=e=>{
     }else canvas.style.cursor='grab';
     return;
   }
-  if(mouseOrbit?.id===e.pointerId){mouseOrbit=null;canvas.style.cursor='grab';return}
   if(drag?.id===e.pointerId){drag=null;canvas.style.cursor='grab'}
 };
 canvas.addEventListener('pointerup',endDrag);
 canvas.addEventListener('pointercancel',endDrag);
 canvas.addEventListener('lostpointercapture',endDrag);
 canvas.addEventListener('contextmenu',e=>e.preventDefault());
-canvas.addEventListener('wheel',e=>{e.preventDefault();e.deltaY<0?zoomIn():zoomOut()},{passive:false});
+canvas.addEventListener('wheel',e=>{e.preventDefault();if(cameraControlsLocked)return;e.deltaY<0?zoomIn():zoomOut()},{passive:false});
 addEventListener('keydown',e=>{
+  if(cameraControlsLocked)return;
   if(e.target instanceof HTMLInputElement||e.target instanceof HTMLTextAreaElement)return;
   if(e.key=='+'||e.key=='=')zoomIn();
   else if(e.key=='-')zoomOut();

@@ -1,9 +1,10 @@
 import { BUILD, RENT } from './config.js';
 import { directedNeighbor, LINKS, MAP, nextPos, T } from './map.js';
 
-const uniqueLots=lots=>[...new Set(lots)].filter(Boolean);
+const uniqueLots=lots=>[...new Set(lots)].filter(lot=>lot&&!lot.destroyed);
 const landingOddsCache=new WeakMap();
-const rentAt=(lot,level=lot.lv)=>Math.round(lot.rent*RENT[level]/RENT[0]);
+const rentAt=(lot,level=lot.lv)=>lot.rents?.[level]??Math.round(lot.rent*RENT[level]/RENT[0]);
+const buildCostAt=(lot,level)=>lot.buildCosts?.[level]??BUILD[level];
 const groupLots=(lot,lots)=>uniqueLots(lots).filter(item=>item.group===lot.group);
 const ownedGroupRent=(lot,owner,lots,levelLot=null,level=null)=>groupLots(lot,lots)
   .filter(item=>item.o===owner)
@@ -20,7 +21,7 @@ function countOwnedGroup(p,lot,lots){
 }
 
 export function shouldBuyLot(p,lot,cost,players,lots){
-  if(!p.alive||p.pet?.kind==='baby'||p.cash<cost)return false;
+  if(!p.alive||p.pet?.kind==='baby'||lot.destroyed||p.cash<cost)return false;
   const reserve=botReserve(p),remaining=p.cash-cost;
   const group=groupLots(lot,lots),owned=countOwnedGroup(p,lot,lots);
   const completesGroup=owned>0&&owned===group.length-1;
@@ -30,7 +31,7 @@ export function shouldBuyLot(p,lot,cost,players,lots){
 }
 
 export function shouldUpgradeLot(p,lot,cost,players,lots,{free=false}={}){
-  if(!p.alive||p.pet?.kind==='baby'||lot.o!==p.i||lot.lv>=5)return false;
+  if(!p.alive||p.pet?.kind==='baby'||lot.destroyed||lot.o!==p.i||lot.lv>=5)return false;
   if(!free&&p.cash<cost)return false;
   const remaining=p.cash-(free?0:cost),reserve=botReserve(p);
   if(remaining<reserve)return false;
@@ -118,7 +119,7 @@ function evaluateLanding(p,tile,ctx){
       }else value-=8;
     }else if(lot.o===p.i){
       if(p.pet?.kind!=='baby'&&lot.lv<5){
-        const cost=BUILD[lot.lv+1]*petMultiplier(p);
+        const cost=buildCostAt(lot,lot.lv+1)*petMultiplier(p);
         if(shouldUpgradeLot(p,lot,cost,ctx.players,ctx.lots))
           value+=Math.max(3,(rentAt(lot,lot.lv+1)-rentAt(lot))*.15);
       }

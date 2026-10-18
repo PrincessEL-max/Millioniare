@@ -1,10 +1,13 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { BufferGeometryUtils } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { $, LOT_LARGE, LOT_SMALL, OWN, RENT_LARGE, RENT_SMALL, cvs, hex, mat, rnd } from './config.js';
+import { $, OWN, cvs, hex, mat, rnd } from './config.js';
 import { LINKS, MAP, MAP_ID, START, T, TREES, tp } from './map.js';
 import { renderer, scene, setWorldBounds } from './scene.js';
 import { createPropertyModel, disposePropertyModel } from '../ui/property-model.js';
+import { avoidFromMap, createGrass, createLotFrame, drawLotHD, lotTexture, OWNER_COLORS, roadTexture, setFrameColor } from './tiles.js';
+import { makeRubble } from '../tools/demolition-fx.js';
+import { propertyEconomy, propertyStarRating } from './property-tiers.js';
 import monasUrl from '../landmarks-pack/models/monas.glb?url';
 import windmillUrl from '../landmarks-pack/models/windmill.glb?url';
 import pineTreeUrl from '../landmarks-pack/models/tree_pine.glb?url';
@@ -43,22 +46,6 @@ function addIcon(t,x,z){
     logo.rotation.x=-Math.PI/2;logo.position.set(x,.105,z);scene.add(logo);
   },undefined,error=>console.error(`Failed to load street icon: ${file}`,error));
 }
-const roadTextures=new Map();
-function roadTex(arms){const key=[...arms].sort().join(''),existing=roadTextures.get(key);if(existing)return existing;
-  const c=cvs(512),g=c.getContext('2d');g.scale(4,4);
-  g.fillStyle='#8c9097';g.fillRect(0,0,128,128);
-  g.strokeStyle='#fff';g.lineWidth=7;g.setLineDash([20,18]);g.lineCap='butt';
-  const ends={n:[64,0],e:[128,64],s:[64,128],w:[0,64]},remaining=new Set(arms);
-  for(const [a,b] of [['n','s'],['e','w']])if(remaining.has(a)&&remaining.has(b)){
-    g.beginPath();g.moveTo(...ends[a]);g.lineTo(...ends[b]);g.stroke();remaining.delete(a);remaining.delete(b)}
-  if(remaining.size==2){const [a,b]=[...remaining],vertical=d=>d=='n'||d=='s';
-    if(vertical(a)!=vertical(b)){g.beginPath();g.moveTo(...ends[a]);g.quadraticCurveTo(64,64,...ends[b]);g.stroke();remaining.clear()}}
-  if(remaining.size>=3){
-    const straight=remaining.has('n')&&remaining.has('s')?['n','s']:remaining.has('e')&&remaining.has('w')?['e','w']:[];
-    if(straight.length){g.beginPath();g.moveTo(...ends[straight[0]]);g.lineTo(...ends[straight[1]]);g.stroke();straight.forEach(d=>remaining.delete(d))}
-  }
-  for(const d of remaining){g.beginPath();g.moveTo(...ends[d]);g.lineTo(64,64);g.stroke()}
-  const texture=canvasTex(c);roadTextures.set(key,texture);return texture}
 export const L=[];
 export const LOT_TARGET_MESHES=[];
 const lotStates=new Map();
@@ -389,12 +376,13 @@ const panBounds={
   minZ:environmentBounds.minZ-panMargin,maxZ:environmentBounds.maxZ+panMargin
 };
 panBounds.minZ-=4;
-const ground=new THREE.Mesh(
-  new THREE.PlaneGeometry(panBounds.maxX-panBounds.minX,panBounds.maxZ-panBounds.minZ),
-  mat(0x6cc644)
-);
-ground.rotation.x=-Math.PI/2;
-ground.position.set((panBounds.minX+panBounds.maxX)/2,-.02,(panBounds.minZ+panBounds.maxZ)/2);
+const grassHalf=Math.ceil(Math.max(
+  Math.abs(panBounds.minX),Math.abs(panBounds.maxX),
+  Math.abs(panBounds.minZ),Math.abs(panBounds.maxZ)
+)/2)*2;
+const ground=createGrass({half:grassHalf,tile:2,flowerRate:.13,avoid:avoidFromMap(MAP,START),
+  aniso:renderer.capabilities.getMaxAnisotropy()});
+ground.position.y=-.02;
 scene.add(ground);
 setWorldBounds(worldBounds,panBounds);
 addMapDecorations(treeLocations).catch(error=>console.error('Failed to load map decorations:',error));
@@ -410,15 +398,59 @@ const lotFacing=(lot)=>{
   const dx=frontage.x/frontage.count-lot.x,dz=frontage.z/frontage.count-lot.z;
   return Math.atan2(dx,dz);
 };
-function lotFrame(w,lx,lz){const g=new THREE.Group(),thick=.1,edge=w/2-thick/2,material=new THREE.MeshBasicMaterial({color:0xf7dea0});
-  const strip=(x,z,sx,sz)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(sx,.015,sz),material);m.position.set(x,.1675,z);g.add(m)};
-  strip(0,-edge,w,thick);strip(0,edge,w,thick);
-  strip(-edge,0,thick,w);strip(edge,0,thick,w);
-  g.position.set(lx,0,lz);scene.add(g);return {group:g,material}}
-export function drawLot(i){const l=L[i],g=l.c.getContext('2d');g.setTransform(4,0,0,4,0,0);const fill=g.createLinearGradient(8,8,120,120);fill.addColorStop(0,'#f4cb68');fill.addColorStop(1,'#e5ad45');g.fillStyle=fill;g.fillRect(0,0,128,128);g.strokeStyle='#c89438';g.lineWidth=3;
-  g.beginPath();g.moveTo(64,6);g.lineTo(64,122);g.moveTo(6,64);g.lineTo(122,64);g.stroke();
-  const ownerColors=['#e53935','#43a047','#1e88e5','#ff9800','#9c27b0','#00acc1'];
-  l.tex.needsUpdate=true;l.frame.material.color.set(l.o<0?'#f7dea0':ownerColors[l.o])}
+function createRatingMarker(stars,lx,lz,width,frontYaw){
+  const canvas=cvs(180,64),context=canvas.getContext('2d');
+  const drawStar=(cx,cy,r,fill)=>{
+    context.beginPath();
+    for(let i=0;i<10;i++){
+      const angle=-Math.PI/2+i*Math.PI/5,pointRadius=i%2?r*.44:r;
+      const x=cx+Math.cos(angle)*pointRadius,y=cy+Math.sin(angle)*pointRadius;
+      if(i===0)context.moveTo(x,y);else context.lineTo(x,y);
+    }
+    context.closePath();context.fillStyle=fill;context.fill();
+    context.strokeStyle='#352513';context.lineWidth=3;context.stroke();
+  };
+  const fullStars=Math.floor(stars),hasHalf=stars%1!==0;
+  for(let i=0;i<3;i++){
+    const x=32+i*58,fill=i<fullStars?'#ffd64a':'#71644a';
+    drawStar(x,32,25,fill);
+    if(i===fullStars&&hasHalf){
+      context.save();context.beginPath();context.rect(x-26,6,26,52);context.clip();
+      drawStar(x,32,25,'#ffd64a');context.restore();
+    }
+  }
+  const texture=new THREE.CanvasTexture(canvas);texture.encoding=THREE.sRGBEncoding;texture.minFilter=THREE.LinearFilter;
+  const marker=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,transparent:true,depthWrite:false}));
+  const reach=width/2+.45;
+  marker.position.set(lx+Math.sin(frontYaw)*reach,.72,lz+Math.cos(frontYaw)*reach);
+  marker.scale.set(1.25,.45,1);
+  marker.visible=false;
+  scene.add(marker);
+  return marker;
+}
+export function updateLotRatingVisibility(focus){
+  const focusX=focus.x,focusZ=focus.z;
+  let closest=null,closestDistance=Infinity;
+  for(const lot of lotStates.values()){
+    const dx=focusX-lot.lx,dz=focusZ-lot.lz;
+    const distance=dx*dx+dz*dz;
+    if(!lot.destroyed&&distance<closestDistance){closest=lot;closestDistance=distance}
+  }
+  const limit=closest?Math.max(2.8,closest.s*2.2):0;
+  for(const lot of lotStates.values())
+    lot.ratingMarker.visible=lot===closest&&closestDistance<=limit*limit;
+}
+const ownerColors=[...OWNER_COLORS,'#ff9800','#9c27b0','#00acc1'];
+export function drawLot(i){const l=L[i];if(!l||l.destroyed)return;drawLotHD(l,ownerColors)}
+export function setLotDestroyed(i,rubble=null){
+  const lot=L[i];if(!lot)return;
+  if(!lot.destroyed){
+    lot.destroyed=true;
+    lot.o=-1;lot.lv=0;
+    lot.parts.forEach(part=>{part.visible=false});
+    lot.rubble=rubble||makeRubble(scene,lot.lx,lot.lz,lot.s*2);
+  }else if(rubble&&!lot.rubble)lot.rubble=rubble;
+}
 const roadGroups=new Map();
 T.forEach((_,i)=>{
   const q=MAP[i].p,arms=LINKS[i].map(j=>{
@@ -430,44 +462,9 @@ T.forEach((_,i)=>{
   group.positions.push(tp(i));
 });
 const roadTransform=new THREE.Object3D();
-const roadTiles=new Set(T.flatMap((tile,index)=>tile[1]==='l'?[]:[index]));
-const roadCoordinates=new Set([...roadTiles].map(index=>MAP[index].p.join(',')));
-const perimeterRoads=[...roadTiles].filter(index=>MAP[index].p[1]>=0);
-const roadBounds=perimeterRoads.reduce((bounds,index)=>{
-  const [x,z]=MAP[index].p;
-  return {minX:Math.min(bounds.minX,x),maxX:Math.max(bounds.maxX,x),
-    minZ:Math.min(bounds.minZ,z),maxZ:Math.max(bounds.maxZ,z)};
-},{minX:Infinity,maxX:-Infinity,minZ:Infinity,maxZ:-Infinity});
-const roadBorders=[];
-for(const index of roadTiles){
-  const [x,z]=MAP[index].p,[worldX,worldZ]=tp(index);
-  for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
-    const atOuterEdge=dx===-1&&x===roadBounds.minX||
-      dx===1&&x===roadBounds.maxX||
-      dz===-1&&z===roadBounds.minZ||
-      dz===1&&z===roadBounds.maxZ;
-    const startSpurEdge=x===2&&(z===-2||z===-1)&&
-      (dx!==0||(z===-2&&dz===-1));
-    if(!(atOuterEdge||startSpurEdge)||roadCoordinates.has(`${x+dx},${z+dz}`))continue;
-    const horizontal=dx!==0;
-    roadBorders.push({
-      x:worldX+dx*1.06,z:worldZ+dz*1.06,
-      width:horizontal?.12:2,height:horizontal?2:.12
-    });
-  }
-}
-if(roadBorders.length){
-  const borders=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),
-    new THREE.MeshBasicMaterial({color:0xffffff}),roadBorders.length);
-  roadBorders.forEach(({x,z,width,height},index)=>{
-    roadTransform.position.set(x,.032,z);roadTransform.scale.set(width,.025,height);
-    roadTransform.updateMatrix();borders.setMatrixAt(index,roadTransform.matrix);
-  });
-  borders.instanceMatrix.needsUpdate=true;scene.add(borders);
-}
 roadGroups.forEach(({arms,positions})=>{
   const roads=new THREE.InstancedMesh(new THREE.PlaneGeometry(2,2),
-    new THREE.MeshBasicMaterial({map:roadTex(arms)}),positions.length);
+    new THREE.MeshBasicMaterial({map:roadTexture(arms,renderer.capabilities.getMaxAnisotropy())}),positions.length);
   positions.forEach(([x,z],i)=>{
     roadTransform.position.set(x,.02,z);roadTransform.rotation.set(-Math.PI/2,0,0);
     roadTransform.scale.set(1,1,1);
@@ -478,31 +475,32 @@ roadGroups.forEach(({arms,positions})=>{
 T.forEach((t,i)=>{const [x,z]=tp(i),M=MAP[i];
   if(t[1]=='l'){const lt=M.lot,existing=lotStates.get(lt.id);
     if(existing){L[i]=existing;return}
-    const w=lt.s==2?4:2,lx=lt.x*2,lz=lt.z*2,c=cvs(512),tex=canvasTex(c);
+    const w=lt.s==2?4:2,lx=lt.x*2,lz=lt.z*2,{c,tex}=lotTexture(w,renderer.capabilities.getMaxAnisotropy());
     const side=new THREE.MeshBasicMaterial({color:0xf2d99c});
     const floorSide=new THREE.MeshBasicMaterial({color:0xb98f4e}),floorTop=new THREE.MeshBasicMaterial({map:tex});
     const m=new THREE.Mesh(new THREE.BoxGeometry(w,.10,w),side);m.position.set(lx,.05,lz);scene.add(m);
-    const inset=w-.32,rim=.16,rail=(x,z,sx,sz)=>{
-      const edge=new THREE.Mesh(new THREE.BoxGeometry(sx,.06,sz),side);edge.position.set(lx+x,.13,lz+z);scene.add(edge)};
-    rail(0,-w/2+rim/2,w,rim);rail(0,w/2-rim/2,w,rim);
-    rail(-w/2+rim/2,0,rim,w);rail(w/2-rim/2,0,rim,w);
+    const inset=w-.32;
     const plot=new THREE.Mesh(new THREE.BoxGeometry(inset,.01,inset),[floorSide,floorSide,floorTop,floorSide,floorSide,floorSide]);
     plot.position.set(lx,.105,lz);plot.userData.targetTile=i;scene.add(plot);LOT_TARGET_MESHES.push(plot);
     const target=new THREE.Mesh(new THREE.PlaneGeometry(w-.12,w-.12),new THREE.MeshBasicMaterial({
       colorWrite:false,depthWrite:false,side:THREE.DoubleSide
     }));
     target.rotation.x=-Math.PI/2;target.position.set(lx,.19,lz);target.userData.targetTile=i;scene.add(target);LOT_TARGET_MESHES.push(target);
-    const state={o:-1,lv:0,c,tex,lx,lz,sz:lt.s==2?1.7:1,b:null,s:lt.s,frontYaw:lotFacing(lt),group:lt.group,mesh:m,frame:lotFrame(w,lx,lz),
-      price:lt.s==2?LOT_LARGE:LOT_SMALL,rent:lt.s==2?RENT_LARGE:RENT_SMALL,id:lt.id};
+    const frame=createLotFrame(w,lx,lz);scene.add(frame.group);
+    const frontYaw=lotFacing(lt),stars=propertyStarRating(lt),economy=propertyEconomy(stars,lt.s);
+    const ratingMarker=createRatingMarker(stars,lx,lz,w,frontYaw);
+    const state={o:-1,lv:0,c,tex,lx,lz,sz:lt.s==2?1.7:1,b:null,s:lt.s,frontYaw,group:lt.group,mesh:m,
+      frame,parts:[m,plot,target,frame.group],pick:[plot,target],restoreFrame:()=>drawLot(i),
+      price:economy.price,rent:economy.rents[0],rents:economy.rents,buildCosts:economy.buildCosts,
+      stars,ratingMarker,id:lt.id};
     lotStates.set(lt.id,state);L[i]=state;
     if(M.ic)addIcon(iconTile(M.ic),x,z)}
   else if(t[1]!='r')addIcon(t,x,z)});
 export async function flashLot(i){const target=L[i];if(!target?.frame||target.o<0)return;
   const lots=[...new Set(L)].filter(l=>l&&l.group==target.group&&l.o==target.o&&l.frame);
   const colors=[0xffee58,0xff695e,0xffffff,0x5ee6ff];
-  for(let round=0;round<3;round++)for(const color of colors){lots.forEach(l=>l.frame.material.color.setHex(color));await new Promise(resolve=>setTimeout(resolve,75))}
-  const ownerColors=['#e53935','#43a047','#1e88e5','#ff9800','#9c27b0','#00acc1'];
-  lots.forEach(l=>l.frame.material.color.set(l.o<0?'#f7dea0':ownerColors[l.o]))}
+  for(let round=0;round<3;round++)for(const color of colors){lots.forEach(l=>setFrameColor(l.frame,color,true));await new Promise(resolve=>setTimeout(resolve,75))}
+  lots.forEach(l=>drawLotHD(l,ownerColors))}
 function tree(x,z){const g=new THREE.Group(),c=[0xf3b127,0xc45ad1,0x66cc33][rnd(0,2)];
   const tr=new THREE.Mesh(new THREE.CylinderGeometry(.1,.14,.7,6),mat(0x7a4a24));tr.position.y=.35;g.add(tr);
   [[0,1.1,0,.55],[.4,.9,.1,.4],[-.35,.85,-.1,.4],[.05,1.45,.1,.38]].forEach(([a,b,d,r])=>{const s=new THREE.Mesh(new THREE.SphereGeometry(r,10,8),mat(c));s.position.set(a,b,d);g.add(s)});

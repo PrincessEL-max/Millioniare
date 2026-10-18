@@ -6,6 +6,7 @@ import { createToolPreview } from './tool-preview.js';
 import { ITEMS } from './items.js';
 import { buildHouseV2 } from './building-kit-v2.js';
 import { buildHotel } from './building-kit.js';
+import { avatarPortraitSVG } from './avatar-portraits.js';
 
 /* Semua ukuran memakai --s (satuan relatif layar) lewat container query, jadi tampilan sama di HP tegak, HP miring, maupun layar besar. */
 const MM_CSS = `
@@ -180,7 +181,7 @@ function mmMapArt(theme, uid) {
 ${lots.join('')}
 <path d="M-12 4 L0 -2 L12 4 L0 10Z" fill="#fff" opacity=".85"/><path d="M-10 -2 V-16 L0 -22 L10 -16 V-2 L0 4Z" fill="${theme[2]}" stroke="rgba(0,0,0,.35)" stroke-width="1.2"/><path d="M-10 -16 L0 -10 L10 -16 L0 -22Z" fill="#fff" opacity=".6"/></g></svg>`;
 }
-const mmPlaceholder = (c, name) => `<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="${c}"/><text x="50" y="64" text-anchor="middle" font-size="42" font-weight="900" fill="#fff" font-family="Arial">${mmEsc((name || '?')[0])}</text></svg>`;
+const MM_CHAR_COLORS = { mimi: '#e53935', luna: '#8e44ad', princessel: '#e8689a', rin: '#00acc1', kai: '#3f8ae0', tafa: '#8a5a34' };
 
 /**
  * Halaman depan. Pilihan: Offline Game / Online Game -> pilih peta -> pilih karakter -> onStart(hasil).
@@ -217,7 +218,7 @@ ${pick('map')}${pick('char')}
   /* ---- daftar peta dan karakter ---- */
   const mapList = mapS.querySelector('.mm-list'), charList = charS.querySelector('.mm-list');
   mapList.innerHTML = o.maps.map((m, i) => `<button class="mm-item" role="option" data-i="${i}" aria-label="${mmEsc(m.name)}">${mmMapArt(m.theme, 't' + i)}</button>`).join('');
-  charList.innerHTML = o.characters.map((c, i) => `<button class="mm-item" role="option" data-i="${i}" aria-label="${mmEsc(c.name)}">${mmPlaceholder(c.kind === 'boy' ? '#3f8ae0' : '#e8689a', c.name)}</button>`).join('');
+  charList.innerHTML = o.characters.map((c, i) => `<button class="mm-item" role="option" data-i="${i}" aria-label="${mmEsc(c.name)}">${avatarPortraitSVG(c.avatarType, MM_CHAR_COLORS[c.id] || '#e8689a', { label: c.name })}</button>`).join('');
   const setSel = (list, i) => [...list.children].forEach((b, k) => { b.classList.toggle('sel', k === i); b.setAttribute('aria-selected', k === i ? 'true' : 'false'); });
   const swap = (el) => { el.classList.remove('swap'); void el.offsetWidth; el.classList.add('swap'); };
   function showMap(i, quiet) {

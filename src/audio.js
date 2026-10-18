@@ -1,4 +1,5 @@
 import { getMenuOptions } from '../ui/main-menu.js';
+import { tuk as playTuk } from '../ui/sound.js';
 
 const ASSETS = {
   bank: new URL('./audio-assets/Bank.wav', import.meta.url).href,
@@ -44,7 +45,7 @@ const ASSETS = {
   }
 };
 
-const CHARACTER_PLAYER = { mimi: 1, luna: 2, kai: 3, tafa: 4, princessel: 5, rin: 6 };
+const CHARACTER_PLAYER = { mimi: 1, kai: 2, tafa: 3, luna: 4, princessel: 5, rin: 6 };
 const activeEffects = new Set();
 let musicAudio = null;
 
@@ -74,15 +75,40 @@ export function playEffect(name) {
   playUrl(url);
 }
 
+export function playHammerTuk() {
+  if (options().sound) playTuk();
+}
+
 function playPlayerLine(player, line) {
-  if (!player) return;
-  const playerNumber = CHARACTER_PLAYER[player.characterId];
+  if (!player) return Promise.resolve();
+  const playerNumber = CHARACTER_PLAYER[player.characterId] || player.i + 1;
   const url = ASSETS.players[playerNumber]?.[line];
-  if (url) playUrl(url);
+  if (!url || !options().sound) return Promise.resolve();
+  const audio = new Audio(url);
+  audio.volume = 0.8;
+  activeEffects.add(audio);
+  return new Promise(resolve => {
+    const finish = () => {
+      activeEffects.delete(audio);
+      audio.removeEventListener('ended', finish);
+      audio.removeEventListener('error', onError);
+      resolve();
+    };
+    const onError = () => {
+      console.error(`Audio gagal dimuat: ${url}`);
+      finish();
+    };
+    audio.addEventListener('ended', finish, { once: true });
+    audio.addEventListener('error', onError, { once: true });
+    audio.play().catch(error => {
+      console.warn('Pemutaran audio diblokir atau gagal:', error);
+      finish();
+    });
+  });
 }
 
 export const playPlayerTurn = player => {
-  if (player?.h) playPlayerLine(player, 'turn');
+  return player?.h ? playPlayerLine(player, 'turn') : Promise.resolve();
 };
 export const playPlayerWin = player => playPlayerLine(player, 'win');
 export const playPlayerLose = player => playPlayerLine(player, 'lose');

@@ -29,15 +29,15 @@ function pcMarkup(id){return `<svg viewBox="0 0 1564 796" style="width:100%;heig
 <rect x="22" y="18" width="1120" height="517" rx="56" fill="url(#${id}-panel)"/>
 <rect x="25" y="21" width="1114" height="511" rx="53" fill="none" stroke="#eef2f5" stroke-opacity=".75" stroke-width="5"/>
 <path d="M78 172H1084" stroke="#fff" stroke-opacity=".65" stroke-width="5" stroke-linecap="round"/>
+<polygon class="pc-tile" fill="url(#${id}-gold)" stroke="#f9dc86" stroke-width="13" stroke-linejoin="round"/>
+<polygon class="pc-tileIn" fill="none" stroke="#e0a23a" stroke-width="2.5"/>
+<path class="pc-grid" stroke="#d99a2c" stroke-opacity=".55" stroke-width="2" fill="none"/>
+<image class="pc-preview" x="34" y="0" width="490" height="536" preserveAspectRatio="xMidYMid meet" pointer-events="none"/>
 <g filter="url(#${id}-txt)" font-family="${FONT}" font-weight="700" fill="#263746" stroke="#f0f4f6" stroke-width="1.5" paint-order="stroke">
 <text class="pc-name" data-slot="name" x="82" y="133" font-size="94" style="white-space:pre"></text>
 <text class="pc-cost" data-slot="cost" x="560" y="255" font-size="54" style="white-space:pre"></text>
 <text class="pc-rent" data-slot="rent" x="560" y="325" font-size="54" style="white-space:pre"></text>
 </g>
-<polygon class="pc-tile" fill="url(#${id}-gold)" stroke="#f9dc86" stroke-width="13" stroke-linejoin="round"/>
-<polygon class="pc-tileIn" fill="none" stroke="#e0a23a" stroke-width="2.5"/>
-<path class="pc-grid" stroke="#d99a2c" stroke-opacity=".55" stroke-width="2" fill="none"/>
-<image class="pc-preview" x="34" y="176" width="490" height="360" preserveAspectRatio="xMidYMid meet" pointer-events="none"/>
 <g class="pc-x" style="cursor:pointer;transform-box:fill-box;transform-origin:center;transition:transform .08s" transform="translate(1416 682)" role="button" aria-label="Tutup">
 <rect x="-67" y="-20" width="134" height="40" rx="12" transform="rotate(45)" fill="url(#${id}-wood)" stroke="#4d260c" stroke-width="6"/>
 <rect x="-67" y="-20" width="134" height="40" rx="12" transform="rotate(-45)" fill="url(#${id}-wood)" stroke="#4d260c" stroke-width="6"/>

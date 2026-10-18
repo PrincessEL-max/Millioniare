@@ -3,36 +3,39 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { SkeletonUtils } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { $, BN, BUILD, HOTEL, RENT, sleep, tween } from './config.js';
 import { directedNeighbor, LINKS, MAP, MAP_ID, T, nextPos, sn, tp } from './map.js';
-import { cameraOffset, cam, constrainWorldView, panOffset, renderer, scene } from './scene.js';
-import { HOSPITAL_POSITION, L, LOT_TARGET_MESHES, drawLot, flashLot, mergeStaticMeshes, setB, updateWorldDecorations } from './world.js';
+import { beginToolZoom, cameraOffset, cam, constrainWorldView, panOffset, renderer, scene, setCameraControlsLocked } from './scene.js';
+import { HOSPITAL_POSITION, L, LOT_TARGET_MESHES, drawLot, flashLot, mergeStaticMeshes, setB, setLotDestroyed, updateLotRatingVisibility, updateWorldDecorations } from './world.js';
 import { configurePlayers, laneOffset, P, place, portrait } from './players.js';
 import { die, face, rollDie } from './dice.js';
-import { G, acceptBoardTarget, ask, ban, buyPropertyDlg, chooseAuctionBid, chooseDieValue, chooseGameMode, chooseOne, chooseBoardTarget, hud, load, onlineLobby, previewBoardTarget, setItemUseHandler, setupGame, shop, showRemotePrompt, showRemoteWithdrawal, thumb, waitingForHost, withdrawDlg } from './ui.js';
+import { G, acceptBoardTarget, ask, ban, buyPropertyDlg, chooseAuctionBid, chooseDieValue, chooseGameMode, chooseOne, chooseBoardTarget, hud, load, onlineLobby, playerEvent, previewBoardTarget, setItemUseHandler, setupGame, shop, showRemotePrompt, showRemoteWithdrawal, thumb, waitingForHost, withdrawDlg } from './ui.js';
 import { getPeerCharacterId, isGuest, isHost, isOnline, myPlayerIndex, requestRemoteItemUse, respondToBankRequest, sendDiceRoll, sendProgress, sendState, setNetworkHandlers, startOnlineGame, waitForGameStart, waitForRemoteRoll } from './multiplayer.js';
 import { createItemArrow } from '../tools/item-arrow.js';
 import { createItemBomb } from '../tools/item-bomb.js';
 import { createItemCone } from '../tools/item-cone.js';
 import { createItemBroom } from '../tools/item-broom.js';
 import { createItemComputer } from '../tools/item-computer.js';
-import { createItemDemolition } from '../tools/item-demolition.js';
 import { createItemForRent } from '../tools/item-forrent.js';
+import { confirmDemolition as confirmDemolitionDialog, demolitionShake, playDemolition } from '../tools/demolition-fx.js';
 import { createItemHelmet } from '../tools/item-helmet.js';
 import { createItemJudge } from '../tools/item-judge.js';
 import { createItemRemote } from '../tools/item-remote.js';
 import { createItemThief } from '../tools/item-thief.js';
 import { showBankDialog } from '../Bank/bank-dialog.js';
-import { playEffect, playPetArrival, playPlayerLose, playPlayerTurn, playPlayerWin, startGameMusic, stopGameMusic } from './audio.js';
+import { playEffect, playHammerTuk, playPetArrival, playPlayerTurn, startGameMusic, stopGameMusic } from './audio.js';
 import { botCashTarget, botReserve, chooseBotRoll, chooseBotTarget, shouldBuyLot, shouldUpgradeLot } from './bot.js';
 import babyUrl from '../pets-pack/models/baby.glb?url';
 import catBlackUrl from '../pets-pack/models/cat_black.glb?url';
 import catWhiteUrl from '../pets-pack/models/cat_white.glb?url';
 import santaUrl from '../pets-pack/models/santa.glb?url';
 import hospitalUrl from '../landmarks-pack/models/hospital.glb?url';
+import { pickLot } from '../ui/lot-picker.js';
+import { playStarMinigame, STAR_REWARD } from './star-minigame.js';
 
 // ---------- aturan ----------
-const ownedLots=()=>[...new Set(L)].filter(Boolean);
-const nw=p=>p.cash+p.bank+ownedLots().reduce((a,l)=>a+(l.o==p.i?l.price+BUILD.slice(0,l.lv+1).reduce((x,y)=>x+y,0):0),0);
-const propertyRent=(lot,level=lot.lv)=>Math.round(lot.rent*RENT[level]/RENT[0]);
+const ownedLots=()=>[...new Set(L)].filter(lot=>lot&&!lot.destroyed);
+const buildCost=(lot,level)=>lot.buildCosts?.[level]??BUILD[level];
+const nw=p=>p.cash+p.bank+ownedLots().reduce((a,l)=>a+(l.o==p.i?l.price+l.buildCosts.slice(0,l.lv+1).reduce((x,y)=>x+y,0):0),0);
+const propertyRent=(lot,level=lot.lv)=>lot.rents?.[level]??Math.round(lot.rent*RENT[level]/RENT[0]);
 const PET_KINDS=['baby','cat-black','cat-white','santa'];
 const PET_MODELS={
   baby:{url:babyUrl,name:'Bayi',animation:'Idle'},
@@ -201,7 +204,7 @@ function disposeObject(object){
     materials.forEach(material=>{material?.map?.dispose();material?.dispose()})});
 }
 const itemModels={
-  broom:[createItemBroom,.25],computer:[createItemComputer,.19],demolition:[createItemDemolition,.16],
+  broom:[createItemBroom,.25],computer:[createItemComputer,.19],
   'for-rent':[createItemForRent,.2],toolkit:[createItemHelmet,.28],lawyer:[createItemJudge,.23],
   'remote-control':[createItemRemote,.4],thief:[createItemThief,.25]
 };
@@ -282,12 +285,41 @@ function pay(p,a,to){const t=p.cash+p.bank;
   if(to)to.cash+=t;p.cash=p.bank=0;p.alive=false;p.m.visible=false;L.forEach((l,i)=>{if(l.o==p.i){l.o=-1;l.lv=0;drawLot(i);setB(i)}});return false}
 async function chooseToolTarget(p,id,message){
   if(p.h){
-    const preview=['bomb','stop-sign','broom'].includes(id)||isStreetSign(id)
-      ?createPlacementPreview(id,STREET_SIGN_DIRS[id]||'front'):null;
-    return chooseBoardTarget(message,tile=>allowedTargetFor(tile,id,p),{
-      onPreview:tile=>preview?.show(tile),
-      onFinish:()=>preview?.dispose()
-    });
+    setCameraControlsLocked(true);
+    try{
+      if(id==='demolition'||id==='for-rent'){
+        document.getElementById('ov')?.replaceChildren();
+        cam.updateMatrixWorld(true);
+        const frustum=new THREE.Frustum().setFromProjectionMatrix(
+          new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix,cam.matrixWorldInverse)
+        );
+        const visibleLots=[...new Set(L)].filter(lot=>{
+          if(!lot||lot.destroyed)return false;
+          const halfSize=lot.s;
+          const bounds=new THREE.Box3(
+            new THREE.Vector3(lot.lx-halfSize,-.1,lot.lz-halfSize),
+            new THREE.Vector3(lot.lx+halfSize,1,lot.lz+halfSize)
+          );
+          return frustum.intersectsBox(bounds);
+        });
+        const picker=pickLot({
+          dom:renderer.domElement,camera:cam,lots:visibleLots,
+          mount:document.getElementById('app'),
+          hint:id==='demolition'?'Pilih lahan untuk dihancurkan':'Pilih lahan untuk dilelang',
+          filter:lot=>!lot.destroyed
+        });
+        const lot=await picker.promise;
+        return lot?L.indexOf(lot):null;
+      }
+      const preview=['bomb','stop-sign','broom'].includes(id)||isStreetSign(id)
+        ?createPlacementPreview(id,STREET_SIGN_DIRS[id]||'front'):null;
+      return await chooseBoardTarget(message,tile=>allowedTargetFor(tile,id,p),{
+        onPreview:tile=>preview?.show(tile),
+        onFinish:()=>preview?.dispose()
+      });
+    }finally{
+      setCameraControlsLocked(false);
+    }
   }
   const candidates=MAP.map((_,tile)=>tile).filter(tile=>allowedTargetFor(tile,id,p));
   let target=chooseBotTarget(p,id,G.botContext());
@@ -303,8 +335,8 @@ async function chooseToolTarget(p,id,message){
 function allowedTargetFor(tile,id,p){
   const lot=L[tile];
   if(id==='broom')return isPathTile(tile);
-  if(id==='demolition')return !!lot;
-  if(id==='for-rent')return !!lot;
+  if(id==='demolition')return !!lot&&!lot.destroyed;
+  if(id==='for-rent')return !!lot&&!lot.destroyed;
   if(id==='lawyer')return tile===p.pos&&!!lot&&lot.o>=0&&lot.o!==p.i;
   return isPathTile(tile);
 }
@@ -315,13 +347,13 @@ function aiBidLimit(p,lot){
   const completesGroup=owned>0&&owned===group.length-1;
   const available=Math.max(0,p.cash-(completesGroup?Math.floor(reserve*.55):reserve));
   const rent=propertyRent(lot),groupBonus=owned?rent*4:0;
-  const value=lot.price+BUILD.slice(1,lot.lv+1).reduce((sum,cost)=>sum+cost,0);
+  const value=lot.price+lot.buildCosts.slice(1,lot.lv+1).reduce((sum,cost)=>sum+cost,0);
   return Math.min(available,Math.max(value,Math.floor((value+rent*5+groupBonus)/100)*100));
 }
 async function runAuction(p,tile){
   const lot=L[tile];if(!lot)return false;
   const active=new Set(P.filter(player=>player.alive).map(player=>player.i));
-  const startingBid=lot.price+BUILD.slice(1,lot.lv+1).reduce((sum,cost)=>sum+cost,0);
+  const startingBid=lot.price;
   let leader=-1,bid=startingBid-100;
   while(active.size>(leader<0?0:1)){
     let raised=false;
@@ -330,7 +362,7 @@ async function runAuction(p,tile){
       const player=P[index],minimum=bid+100;
       if(player.cash<minimum){active.delete(index);continue}
       let offer;
-      if(player.h)offer=await chooseAuctionBid(player,lot.id,bid,minimum);
+      if(player.h)offer=await chooseAuctionBid(player,lot.id,bid,minimum,leader);
       else offer=minimum<=aiBidLimit(player,lot)?minimum:false;
       if(offer===true)offer=minimum;
       if(offer!==false&&Number.isSafeInteger(offer)&&offer>=minimum&&offer<=player.cash){
@@ -356,37 +388,23 @@ async function confirmToolkit(p,lot){
     :true;
 }
 async function confirmDemolition(p,lot){
+  const hasBuilding=lot.lv>0&&!!lot.b;
   return p.h
-    ?ask(thumb(lot.lv,lot.s===2),`Hancurkan ${lot.id}?`,lot.lv>0?'Bangunan di lahan ini akan diruntuhkan.':'Lahan ini kosong, tidak ada bangunan untuk diruntuhkan.','✓','✕')
+    ?confirmDemolitionDialog({
+      mount:document.getElementById('app'),
+      kind:hasBuilding?(lot.s===2?'hotel':'house'):'lot',
+      owner:lot.o>=0?P[lot.o].n:'',
+      title:`Hancurkan ${lot.id}?`,
+      texts:{
+        house:'Bangunan rumah ini akan dihancurkan. Tindakan ini tidak dapat dibatalkan.',
+        hotel:'Bangunan hotel ini akan dihancurkan. Tindakan ini tidak dapat dibatalkan.',
+        lot:'Lahan kosong ini akan dihancurkan menjadi puing. Tindakan ini tidak dapat dibatalkan.'
+      }
+    })
     :true;
 }
 async function confirmToolTarget(p,title,description){
   return p.h?ask(portrait(p),title,description,'✓','✕'):true;
-}
-async function showDemolitionModel(lot){
-  const model=createItemDemolition(),started=performance.now();
-  const targetSize=lot.b
-    ?new THREE.Box3().setFromObject(lot.b).getSize(new THREE.Vector3())
-    :new THREE.Vector3(lot.s===2?3.55:1.55,1,lot.s===2?3.55:1.55);
-  const subject=model.getObjectByName('DemolitionTargetBuilding');
-  if(!subject)throw new Error('Model demolition tidak memiliki bagian bangunan.');
-  const subjectBounds=new THREE.Box3().setFromObject(subject),subjectSize=subjectBounds.getSize(new THREE.Vector3());
-  const subjectCenter=subjectBounds.getCenter(new THREE.Vector3());
-  const scale=Math.max(targetSize.x,targetSize.z)/Math.max(subjectSize.x,subjectSize.z);
-  model.scale.setScalar(scale);
-  model.position.set(lot.lx+(lot.s===2?2.5:1.5)-subjectCenter.x*scale,.02-subjectCenter.y*scale,lot.lz+1.1-subjectCenter.z*scale);
-  scene.add(model);
-  const previousFocus=focusOverride;focusOverride=new THREE.Vector3(lot.lx,0,lot.lz);
-  try{
-    await new Promise(resolve=>{
-      const update=now=>{
-        model.userData.update?.(now-started);
-        if(now-started>=1000){scene.remove(model);disposeObject(model);resolve()}
-        else requestAnimationFrame(update);
-      };
-      requestAnimationFrame(update);
-    });
-  }finally{focusOverride=previousFocus}
 }
 async function collectGuestAction(p,item){
   if(item.id==='computer'){
@@ -433,7 +451,7 @@ async function collectGuestAction(p,item){
   if(item.id==='for-rent'){
     const lot=L[tile];
     if(!lot)return null;
-    const startingBid=lot.price+BUILD.slice(1,lot.lv+1).reduce((sum,cost)=>sum+cost,0);
+    const startingBid=lot.price;
     if(!await confirmToolTarget(p,'Lelang '+lot.id,`Harga awal: $${startingBid}<br>Kenaikan tawaran: $100`))return null;
     return {tile,confirm:true};
   }
@@ -443,7 +461,7 @@ async function collectGuestAction(p,item){
   }
   return {tile};
 }
-async function useItem(p,index,action){
+async function performItemUse(p,index,action){
   const item=p.inv[index];if(!item)return false;
   if(isGuest()&&action===undefined){
     const remoteAction=await collectGuestAction(p,item);if(!remoteAction)return false;
@@ -474,10 +492,10 @@ async function useItem(p,index,action){
   }else if(item.id==='lawyer'){
     const tile=p.pos,lot=L[tile];
     if(!allowedTargetFor(tile,item.id,p)){if(p.h)await ban(portrait(p),p.css,'LAWYER','Kamu harus berhenti di lahan milik lawan.',1000);return false}
-    const former=P[lot.o];lot.o=p.i;drawLot(tile);used=true;playPlayerWin(p);playPlayerLose(former);
+    const former=P[lot.o];lot.o=p.i;drawLot(tile);used=true;
+    await playerEvent(p,'happy','LAWYER CLAIM',`${lot.id} sekarang milikmu`);
+    await playerEvent(former,'sad','LAHAN DIAMBIL',`${lot.id} diambil oleh ${p.n}`);
     await showToolModel(item.id,p,{scaleOverride:.4});
-    await ban(portrait(p),p.css,'LAWYER',`${lot.id} sekarang milikmu`,1100);
-    await ban(portrait(former),former.css,'LAHAN DIAMBIL ALIH',lot.id,950);
   }else if(item.id==='thief'){
     const targets=P.filter(target=>target.alive&&target.i!==p.i&&target.cash>0);
     if(!targets.length)return false;
@@ -488,8 +506,10 @@ async function useItem(p,index,action){
     if(targetIndex===null)return false;
     const target=P[targetIndex],stolen=Math.floor(target.cash*.25);
     if(!stolen)return false;
-    target.cash-=stolen;p.cash+=stolen;used=true;playPlayerWin(p);await showToolModel(item.id,p,{near:target,scaleOverride:.48});
-    await ban(portrait(p),p.css,'THIEF',`Mencuri $${stolen} dari ${target.n}`,1100);
+    target.cash-=stolen;p.cash+=stolen;used=true;
+    await playerEvent(target,'sad','UANG DICURI',`Kehilangan $${stolen} oleh ${p.n}`);
+    await playerEvent(p,'happy','MENCURI UANG',`Mendapatkan $${stolen} dari ${target.n}`);
+    await showToolModel(item.id,p,{near:target,scaleOverride:.48});
   }else if(item.id==='toolkit'){
     const lot=canUseToolkit(p);
     if(!lot){if(p.h)await ban(portrait(p),p.css,'TOOLKIT',p.pet?.kind==='baby'
@@ -531,19 +551,46 @@ async function useItem(p,index,action){
       const confirmed=action?.confirm??(p.h?await confirmDemolition(p,lot):true);
       if(confirmed!==true)return false;
       used=true;
-      if(lot.lv>0){
-        const animation=showDemolitionModel(lot);playEffect('bomb');lot.lv=0;setB(tile);drawLot(tile);
-        await animation;
+      if(lot.lv>0&&lot.b){
+        const building=lot.b,meshes=[];
+        building?.traverse(object=>{if(object.isMesh)meshes.push(object)});
+        await playDemolition({scene,lot:{x:lot.lx,z:lot.lz,w:lot.s*2},
+          building,parts:lot.parts,mode:'building'});
+        lot.lv=0;setB(tile);drawLot(tile);
+        meshes.forEach(mesh=>{
+          mesh.geometry?.dispose();
+          const materials=Array.isArray(mesh.material)?mesh.material:[mesh.material];
+          materials.forEach(material=>{material?.map?.dispose();material?.dispose()});
+        });
         await ban(portrait(p),p.css,'DEMOLITION','Bangunan dihancurkan!',1100);
-      }else await ban(portrait(p),p.css,'DEMOLITION','Lahan kosong, tidak ada bangunan.',1000);
+      }else{
+        const result=await playDemolition({scene,lot:{x:lot.lx,z:lot.lz,w:lot.s*2},
+          parts:lot.parts,mode:'lot'});
+        lot.o=-1;lot.lv=0;setLotDestroyed(tile,result.rubble);
+        await ban(portrait(p),p.css,'DEMOLITION','Lahan dihancurkan menjadi puing.',1100);
+      }
     }else if(item.id==='for-rent'){
-      if(action?.confirm!==true&&p.h)return false;
       const lot=L[tile];if(!lot)return false;
+      if(action?.confirm!==true&&p.h){
+        const startingBid=lot.price;
+        if(!await confirmToolTarget(p,'Lelang '+lot.id,
+          `Harga awal: $${startingBid}<br>Kenaikan tawaran: $100`))return false;
+      }
       used=true;await showToolModel(item.id,p);await runAuction(p,tile);
     }
   }
   if(used){p.inv.splice(index,1);hud()}
   return used;
+}
+async function useItem(p,index,action){
+  if(!p.inv[index])return false;
+  focusCameraOnPlayer(p);
+  const restoreZoom=beginToolZoom();
+  try{
+    return await performItemUse(p,index,action);
+  }finally{
+    restoreZoom();
+  }
 }
 setItemUseHandler(useItem);
 G.hasObstacle=()=>obstacles.size>0;
@@ -636,8 +683,19 @@ async function land(p){const t=T[p.pos],l=L[p.pos];
     p.m.visible=true;burnCharacter(p,true);placeAtHospital(p);
     await ban(portrait(p),p.css,'BOM MELEDAK','Dibawa ke rumah sakit. Kamu melewatkan 3 giliran.',1500);return;
   }
-  if(t[1]=='pad'){p.cash+=t[2];playEffect('coins');playPlayerWin(p);hud();await ban(portrait(p),p.css,'COLLECT','$'+t[2]);return}
-  if(t[1]=='l'&&t[2]?.t=='pad'){p.cash+=t[2].v;playEffect('coins');playPlayerWin(p);hud();await ban(portrait(p),p.css,'COLLECT','$'+t[2].v)}
+  if(l?.destroyed)return;
+  if(t[1]=='star'){
+    const won=await playStarMinigame(p);
+    if(won){
+      p.cash+=STAR_REWARD;playEffect('coins');hud();
+      await playerEvent(p,'happy','MENANG MINI GAME',`Mendapatkan $${STAR_REWARD} dari bintang`);
+    }else{
+      hud();await playerEvent(p,'sad','MINI GAME SELESAI','Koin tidak berhasil ditemukan');
+    }
+    return;
+  }
+  if(t[1]=='pad'){p.cash+=t[2];playEffect('coins');hud();await playerEvent(p,'happy',`MENDAPATKAN $${t[2]}`,'Bonus petak');return}
+  if(t[1]=='l'&&t[2]?.t=='pad'){p.cash+=t[2].v;playEffect('coins');hud();await playerEvent(p,'happy',`MENDAPATKAN $${t[2].v}`,'Bonus petak')}
   if(t[1]=='bank')return;
   if(t[1]=='bus')await shop(p);
   else if(t[1]=='l'){
@@ -650,7 +708,7 @@ async function land(p){const t=T[p.pos],l=L[p.pos];
         if(p.pet)playPetArrival(p.pet.kind);
         const cost=petCost(p,l.price);
         if(p.cash>=cost){const y=p.h?await buyPropertyDlg(p,t[0],cost,propertyRent(l,0)):shouldBuyLot(p,l,cost,P,L);
-          if(y){p.cash-=cost;l.o=p.i;drawLot(p.pos);hud();await sleep(300)}}
+          if(y){p.cash-=cost;l.o=p.i;drawLot(p.pos);if(!p.h)playHammerTuk();hud();await sleep(300)}}
         else if(p.h)await ban(portrait(p),p.css,t[0],'Uang kurang',1000);
       }
     }
@@ -660,16 +718,18 @@ async function land(p){const t=T[p.pos],l=L[p.pos];
         if(p.h)await ban(portrait(p),p.css,'BAYI','Kamu belum bisa meningkatkan bangunan.',950);
       }else{
         if(p.pet)playPetArrival(p.pet.kind);
-        const nx=l.lv+1,cost=petCost(p,BUILD[nx],true);
+        const nx=l.lv+1,cost=petCost(p,buildCost(l,nx),true);
         if(l.lv<5&&p.cash>=cost){const rent=propertyRent(l,nx),y=p.h?await buyPropertyDlg(p,l.s==2?HOTEL[nx]:BN[nx],cost,rent,{level:nx,hotel:l.s===2}):shouldUpgradeLot(p,l,cost,P,L);
           if(y){p.cash-=cost;l.lv=nx;setB(p.pos);hud();await sleep(300)}}
       }
     }else{
       const o=P[l.o],r=petCost(p,complexRent(l,l.o));
       if(p.pet?.kind==='cat-black'||p.pet?.kind==='cat-white')playPetArrival(p.pet.kind);
-      await ban(portrait(p),p.css,t[0],'RENT $'+r,1300);
-      playPlayerLose(p);
-      if(pay(p,r,o)){playPlayerWin(o);hud();await ban(portrait(o),o.css,'RECEIVED','$'+r,1000)}else{hud();await ban(portrait(p),p.css,p.n,'BANGKRUT 💥',1400)}
+      const available=p.cash+p.bank,paid=Math.min(available,r),solvent=pay(p,r,o);
+      hud();
+      await playerEvent(p,'sad',`SEWA HILANG $${paid}`,`Dibayarkan kepada ${o.n}`);
+      if(paid>0)await playerEvent(o,'happy',`SEWA DITERIMA $${paid}`,`Dari ${p.n}`);
+      if(!solvent)await ban(portrait(p,'sad'),p.css,p.n,'BANGKRUT 💥',1400);
     }
   }
 }
@@ -677,7 +737,7 @@ const snapshot=(awaitingRoll=false)=>({
   cur:G.cur,awaitingRoll,
   players:P.map(p=>({pos:p.pos,prev:p.prev,nextMove:p.nextMove,cash:p.cash,bank:p.bank,alive:p.alive,
     inv:p.inv,hospitalTurns:p.hospitalTurns||0,nextRoll:p.nextRoll||null,pet:p.pet?{...p.pet}:null})),
-  lots:L.map(l=>l&&({o:l.o,lv:l.lv})),
+  lots:L.map(l=>l&&({o:l.o,lv:l.lv,destroyed:!!l.destroyed})),
   obstacles:[...obstacles.values()].map(({tile,id,dir})=>({tile,id,dir})),
   pets:[...petTiles].map(([tile,{kind}])=>({tile,kind})),petSpawnCountdown:turnsUntilPetSpawn
 });
@@ -725,7 +785,7 @@ function applySnapshot(state){
       P[i].m.rotation.y=moveYaw(data.prev,data.pos);
   });
   if(G.cur!==previousTurn&&P[G.cur].h&&P[G.cur].i===myPlayerIndex())waveForTurn(P[G.cur]);
-  state.lots.forEach((data,i)=>{if(data&&L[i]){L[i].o=data.o;L[i].lv=data.lv;drawLot(i);setB(i)}});
+  state.lots.forEach((data,i)=>{if(data&&L[i]){L[i].o=data.o;L[i].lv=data.lv;if(data.destroyed)setLotDestroyed(i);drawLot(i);setB(i)}});
   [...obstacles.keys()].forEach(clearObstacle);
   state.obstacles.forEach(({tile,id,dir})=>{if(Number.isInteger(tile)&&tile>=0&&tile<MAP.length&&['bomb','street-sign','stop-sign'].includes(id))setObstacle(tile,{id,dir})});
   [...petTiles.keys()].forEach(clearMapPet);
@@ -750,6 +810,12 @@ function check(){const al=P.filter(p=>p.alive),w=al.length==1?al[0]:0;
 const foc=new THREE.Vector3().copy(P[0].m.position),target=new THREE.Vector3();
 const petFocusTarget=new THREE.Vector3();
 let petFocusUntil=0;
+function focusCameraOnPlayer(p){
+  focusOverride=null;
+  petFocusUntil=0;
+  panOffset.set(0,0,0);
+  foc.copy(p.m.position);
+}
 function announcePet(tile,kind){
   playPetArrival(kind);
   const [x,z]=tp(tile);
@@ -766,7 +832,7 @@ function syncMovement(p,force=false){
   sendProgress({player:p.i,x:p.m.position.x,y:p.m.position.y,z:p.m.position.z,rotation:p.m.rotation.y,walking:!!p.networkWalking})
     ?.catch(error=>console.error('Online movement sync error:',error));
 }
-(function loop(){const now=performance.now(),delta=Math.min((now-lastPetFrame)/1000,.1);lastPetFrame=now;if(isGuest())P.forEach(p=>{if(p.networkTarget){p.m.position.lerp(p.networkTarget,.32);const turn=Math.atan2(Math.sin(p.networkRotation-p.m.rotation.y),Math.cos(p.networkRotation-p.m.rotation.y));p.m.rotation.y+=turn*.32}});foc.lerp(focusOverride||(now<petFocusUntil?petFocusTarget:P[G.cur].m.position),.07);target.copy(foc).add(panOffset);constrainWorldView(target,foc);cam.position.copy(target).add(cameraOffset);cam.lookAt(target);P.forEach(p=>p.m.userData.update?.(now));L.forEach(l=>l?.b?.userData.update?.(now));obstacles.forEach(item=>item.model.userData.update?.(now));petVisuals.forEach(visual=>visual.mixer.update(delta));hospitalMixer?.update(delta);updateWorldDecorations(delta);renderer.render(scene,cam);requestAnimationFrame(loop)})();
+(function loop(){const now=performance.now(),delta=Math.min((now-lastPetFrame)/1000,.1);lastPetFrame=now;if(isGuest())P.forEach(p=>{if(p.networkTarget){p.m.position.lerp(p.networkTarget,.32);const turn=Math.atan2(Math.sin(p.networkRotation-p.m.rotation.y),Math.cos(p.networkRotation-p.m.rotation.y));p.m.rotation.y+=turn*.32}});foc.lerp(focusOverride||(now<petFocusUntil?petFocusTarget:P[G.cur].m.position),.07);target.copy(foc).add(panOffset);constrainWorldView(target,foc);updateLotRatingVisibility(target);cam.position.copy(target).add(cameraOffset).add(demolitionShake);cam.lookAt(target);P.forEach(p=>p.m.userData.update?.(now));L.forEach(l=>l?.b?.userData.update?.(now));obstacles.forEach(item=>item.model.userData.update?.(now));petVisuals.forEach(visual=>visual.mixer.update(delta));hospitalMixer?.update(delta);updateWorldDecorations(delta);renderer.render(scene,cam);requestAnimationFrame(loop)})();
 setNetworkHandlers({
   onState:state=>{try{applySnapshot(state)}catch(error){console.error(error)}},
   onProgress:progress=>{
@@ -780,6 +846,7 @@ setNetworkHandlers({
   onDiceRoll:async({player,value})=>{
     if(!Number.isInteger(player)||!P[player]||!Number.isInteger(value)||value<1||value>6)return;
     playEffect('dice');playPlayerTurn(P[player]);
+    focusCameraOnPlayer(P[player]);
     const previousFocus=focusOverride;focusOverride=P[player].m.position.clone();
     try{await rollDie(P[player],value);await sleep(1200);die.visible=false}
     finally{focusOverride=previousFocus}
@@ -813,7 +880,7 @@ setNetworkHandlers({
 });
 async function main(){
   startGameMusic();
-  while(!G.over){const p=P[G.cur];hud();
+  while(!G.over){const p=P[G.cur];focusCameraOnPlayer(p);hud();
     if(isHost())await sendState(snapshot());
     if(p.alive&&p.hospitalTurns>0){
       p.hospitalTurns--;
@@ -834,6 +901,7 @@ async function main(){
             await useItem(p,index);
       }
       const fixed=p.nextRoll;p.nextRoll=null;
+      focusCameraOnPlayer(p);
       playEffect('dice');playPlayerTurn(p);
       const v=await rollDie(p,fixed,value=>{
         sendDiceRoll(p.i,value)?.catch(error=>console.error('Online dice sync error:',error));
