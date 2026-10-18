@@ -16,7 +16,7 @@ import { SIDE_ICONS } from '../ui/side-panel-icons.js';
 
 const STORE_CATALOG=ITEMS.map(item=>({...item,name:item.n}));
 let playerEventQueue=Promise.resolve();
-export function playerEvent(p,mood,title,message){
+export function playerEvent(p,mood,title,message,{duration=850,waitForAudio=true}={}){
   const show=async()=>{
     const root=document.getElementById('app');
     if(!root)throw new Error('Kontainer permainan tidak ditemukan untuk notifikasi pemain.');
@@ -39,7 +39,8 @@ export function playerEvent(p,mood,title,message){
     layer.append(card);
     root.append(layer);
     const play=mood==='happy'?playPlayerWin(p):playPlayerLose(p);
-    await Promise.all([play,new Promise(resolve=>setTimeout(resolve,850))]);
+    if(waitForAudio)await Promise.all([play,new Promise(resolve=>setTimeout(resolve,duration))]);
+    else await new Promise(resolve=>setTimeout(resolve,duration));
     layer.remove();
   };
   const result=playerEventQueue.then(show);
@@ -48,13 +49,21 @@ export function playerEvent(p,mood,title,message){
 }
 function randomStoreStock(p){
   const available=STORE_CATALOG.filter(item=>!p.inv.some(owned=>owned.id===item.id));
-  for(let i=available.length-1;i>0;i--){
-    const j=Math.floor(Math.random()*(i+1));[available[i],available[j]]=[available[j],available[i]];
-  }
   const max=Math.min(11,available.length);
   if(!max)return [];
   const count=max<2?max:2+Math.floor(Math.random()*(max-1));
-  return available.slice(0,count);
+  const stock=[];
+  while(stock.length<count&&available.length){
+    const weight=item=>item.id==='for-rent'?0.45:1;
+    const totalWeight=available.reduce((total,item)=>total+weight(item),0);
+    let choice=Math.random()*totalWeight,index=0;
+    for(;index<available.length-1;index++){
+      choice-=weight(available[index]);
+      if(choice<0)break;
+    }
+    stock.push(available.splice(index,1)[0]);
+  }
+  return stock;
 }
 
 // ---------- UI ----------
@@ -338,11 +347,13 @@ async function remoteShop(p,stock){
 async function aiShop(p){
   const context=G.botContext?.();
   if(!context)return;
-  const stock=STORE_CATALOG.filter(item=>!p.inv.some(owned=>owned.id===item.id));
-  const item=chooseBotShopItem(stock,p,context);
-  if(!item)return;
-  p.cash-=item.price;p.inv.push({id:item.id,n:item.name,icon:item.icon});hud();
-  await playerEvent(p,'happy','ALAT DIBELI',`${item.name} seharga $${item.price}`);
+  while(true){
+    const stock=STORE_CATALOG.filter(item=>!p.inv.some(owned=>owned.id===item.id));
+    const item=chooseBotShopItem(stock,p,context);
+    if(!item)return;
+    p.cash-=item.price;p.inv.push({id:item.id,n:item.name,icon:item.icon});hud();
+    await playerEvent(p,'happy','ALAT DIBELI',`${item.name} seharga $${item.price}`,{duration:360,waitForAudio:false});
+  }
 }
 export async function shop(p){
   if(!p.h){await aiShop(p);return}

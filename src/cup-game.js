@@ -15,7 +15,7 @@ const CSS=`
 .cg-root canvas{position:absolute;inset:0;z-index:0;display:block;touch-action:none}
 .cg-hud{position:absolute;left:0;right:0;top:10px;display:flex;justify-content:space-between;padding:0 14px;pointer-events:none;z-index:2}
 .cg-chip{background:rgba(10,40,80,.5);color:#fff;padding:6px 14px;border-radius:18px;font-size:15px;font-weight:700}
-.cg-msg{position:absolute;left:0;right:0;bottom:86px;text-align:center;color:#fff;font-weight:800;font-size:clamp(18px,3.4vw,28px);text-shadow:0 2px 6px rgba(0,0,0,.45);padding:0 16px;pointer-events:none;z-index:2}
+.cg-msg{position:absolute;left:0;right:0;top:58px;text-align:center;color:#fff;font-weight:800;font-size:clamp(18px,3.4vw,28px);text-shadow:0 2px 6px rgba(0,0,0,.45);padding:0 16px;pointer-events:none;z-index:2}
 .cg-btn{position:absolute;left:50%;transform:translateX(-50%);bottom:20px;border:0;border-radius:26px;padding:14px 36px;font-size:18px;font-weight:800;background:#ffc93c;color:#5a3a00;box-shadow:0 4px 0 #c28f00,0 8px 16px rgba(0,0,0,.25);cursor:pointer;z-index:3}
 .cg-btn:active{transform:translateX(-50%) translateY(3px);box-shadow:0 1px 0 #c28f00}
 .cg-btn[hidden]{display:none}

@@ -2,9 +2,11 @@ import { createClient } from '@supabase/supabase-js';
 
 const EVENTS=['join','room-ready','game-start','state','progress','dice-roll','roll-request','roll-accepted','prompt','answer','bank-request','bank-result','bank-withdraw-request','bank-withdraw-result','item-use-request','item-use-result'];
 let client,channel,role='offline',roomCode='',peerId='',peerCharacterId='',selfId=crypto.randomUUID();
-let handlers={},guestResolver,startResolver,rollResolver,roomReadyResolver,guestConnected=false,guestReady=false,guestTurnOpen=false,lastAcceptedRollRequestId='',pendingRollRequest=null,lastGameStart;
+let handlers={},guestResolver,startResolver,rollResolver,roomReadyResolver,guestConnected=false,guestReady=false,guestTurnOpen=false,guestTurnId='',pendingRollRequest=null,lastGameStart;
 const answers=new Map(),bankRequests=new Map(),withdrawRequests=new Map(),itemUseRequests=new Map();
+const acceptedRollRequestIds=new Set();
 const ROLL_REQUEST_RETRY_MS=1200,ROLL_REQUEST_TIMEOUT_MS=15000;
+const ROLL_STATE_RETRY_MS=2000;
 
 export const isOnline=()=>role!=='offline';
 export const isHost=()=>role==='host';
@@ -23,6 +25,8 @@ function setupChannel(code,nextRole){
   if(!url||!key)throw new Error('Konfigurasi VITE_SUPABASE_URL dan VITE_SUPABASE_ANON_KEY belum diisi.');
   client=createClient(url,key);
   role=nextRole;roomCode=code;selfId=crypto.randomUUID();peerId='';peerCharacterId='';
+  guestConnected=false;guestReady=false;guestTurnOpen=false;guestTurnId='';lastGameStart=null;
+  acceptedRollRequestIds.clear();
   channel=client.channel(`millionaire-${code}`,{config:{broadcast:{self:false},presence:{key:selfId}}});
   EVENTS.forEach(event=>channel.on('broadcast',{event},({payload})=>handleEvent(event,payload||{})));
   return new Promise((resolve,reject)=>{
@@ -67,12 +71,16 @@ function handleEvent(event,payload){
       guestResolver?.(true);guestResolver=null;handlers.onGuestJoined?.();
     }else if(payload.clientId===peerId){
       if(event==='roll-request'&&payload.player===1&&typeof payload.id==='string'){
-        if(rollResolver){
-          const pending=rollResolver;rollResolver=null;
-          lastAcceptedRollRequestId=payload.id;pending.resolve();
+        if(acceptedRollRequestIds.has(payload.id)){
           broadcast('roll-accepted',{clientId:peerId,id:payload.id})
             .catch(error=>handlers.onError?.(error));
-        }else if(payload.id===lastAcceptedRollRequestId){
+        }else if(rollResolver&&payload.rollTurnId===rollResolver.turnId){
+          const pending=rollResolver;rollResolver=null;
+          clearTimeout(pending.timer);
+          acceptedRollRequestIds.add(payload.id);
+          if(acceptedRollRequestIds.size>64)
+            acceptedRollRequestIds.delete(acceptedRollRequestIds.values().next().value);
+          pending.resolve();
           broadcast('roll-accepted',{clientId:peerId,id:payload.id})
             .catch(error=>handlers.onError?.(error));
         }
@@ -88,9 +96,13 @@ function handleEvent(event,payload){
     if(event==='room-ready'&&payload.clientId===selfId){handlers.onRoomReady?.();roomReadyResolver?.();roomReadyResolver=null}
     else if(event==='game-start'){lastGameStart=payload;handlers.onGameStart?.(payload);startResolver?.(payload);startResolver=null}
     else if(event==='state'){
-      guestTurnOpen=!!payload.awaitingRoll&&payload.cur===1;
-      guestReady=guestTurnOpen;
-      if(!guestTurnOpen)acknowledgeRollRequestFromTurn();
+      const nextTurnOpen=!!payload.awaitingRoll&&payload.cur===1&&typeof payload.rollTurnId==='string';
+      const nextTurnId=nextTurnOpen?payload.rollTurnId:'';
+      if(pendingRollRequest&&(!nextTurnOpen||pendingRollRequest.turnId!==nextTurnId))
+        finishRollRequest(pendingRollRequest,true);
+      guestTurnOpen=nextTurnOpen;
+      guestTurnId=nextTurnId;
+      guestReady=guestTurnOpen&&!pendingRollRequest&&!itemUseRequests.size;
       handlers.onState?.(payload);
     }
     else if(event==='progress')handlers.onProgress?.(payload)
@@ -154,17 +166,26 @@ export function sendDiceRoll(player,value){
 export function waitForRemoteRoll(state){
   if(!isHost())return Promise.reject(new Error('Hanya host yang dapat menunggu giliran remote.'));
   if(!peerId)return Promise.reject(new Error('Pemain kedua terputus dari room.'));
+  if(rollResolver)return Promise.reject(new Error('Permintaan lemparan pemain kedua sebelumnya belum selesai.'));
   return new Promise((resolve,reject)=>{
-    rollResolver={resolve};
-    broadcast('state',{...state,awaitingRoll:true}).catch(error=>{rollResolver=null;reject(error)});
+    const pending={resolve,turnId:crypto.randomUUID(),timer:null};
+    rollResolver=pending;
+    const announce=()=>{
+      if(rollResolver!==pending)return;
+      broadcast('state',{...state,awaitingRoll:true,rollTurnId:pending.turnId})
+        .then(status=>{if(status!=='ok')handlers.onError?.(new Error(`Status pengiriman giliran online: ${status}`))})
+        .catch(error=>handlers.onError?.(error));
+      pending.timer=setTimeout(announce,ROLL_STATE_RETRY_MS);
+    };
+    announce();
   })
 }
 export function sendRollRequest(){
   if(!isGuest())return Promise.reject(new Error('Tidak ada giliran online yang aktif.'));
   if(pendingRollRequest)return pendingRollRequest.promise;
-  if(!guestTurnOpen)return Promise.reject(new Error('Belum waktunya melempar dadu.'));
+  if(!guestTurnOpen||!guestTurnId)return Promise.reject(new Error('Belum waktunya melempar dadu.'));
   guestReady=false;
-  const request={id:crypto.randomUUID(),timer:null,resolve:null,promise:null};
+  const request={id:crypto.randomUUID(),turnId:guestTurnId,timer:null,resolve:null,promise:null};
   request.promise=new Promise((resolve,reject)=>{
     request.resolve=accepted=>{
       if(accepted)resolve(true);
@@ -176,7 +197,12 @@ export function sendRollRequest(){
         finishRollRequest(request,false);
         return;
       }
-      broadcast('roll-request',{clientId:selfId,player:1,id:request.id})
+      if(!guestTurnOpen||guestTurnId!==request.turnId){
+        finishRollRequest(request,true);
+        return;
+      }
+      broadcast('roll-request',{clientId:selfId,player:1,id:request.id,rollTurnId:request.turnId})
+        .then(status=>{if(status!=='ok')handlers.onError?.(new Error(`Status pengiriman permintaan dadu: ${status}`))})
         .catch(error=>handlers.onError?.(error));
       request.timer=setTimeout(send,ROLL_REQUEST_RETRY_MS);
     };
@@ -231,10 +257,12 @@ export function requestRemoteItemUse(itemIndex,action){
 }
 export async function leaveRoom(){
   const old=channel;channel=null;role='offline';peerId='';peerCharacterId='';roomCode='';
-  guestConnected=false;guestReady=false;guestTurnOpen=false;lastAcceptedRollRequestId='';lastGameStart=null;roomReadyResolver=null;
+  guestConnected=false;guestReady=false;guestTurnOpen=false;guestTurnId='';lastGameStart=null;roomReadyResolver=null;
   if(pendingRollRequest){const pending=pendingRollRequest;clearTimeout(pending.timer);pendingRollRequest=null;pending.resolve(false)}
   const waitingGuest=guestResolver;guestResolver=null;waitingGuest?.(false);
-  answers.clear();bankRequests.clear();withdrawRequests.clear();itemUseRequests.clear();rollResolver=null;guestResolver=null;startResolver=null;
+  answers.clear();bankRequests.clear();withdrawRequests.clear();itemUseRequests.clear();
+  if(rollResolver){clearTimeout(rollResolver.timer);rollResolver=null}
+  acceptedRollRequestIds.clear();guestResolver=null;startResolver=null;
   if(old)await old.unsubscribe();
   if(client){client.removeAllChannels();client=null}
 }

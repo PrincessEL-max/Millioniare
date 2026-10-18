@@ -229,8 +229,11 @@ export function chooseBotTarget(p,id,ctx){
 export function botItemValue(id,p,ctx){
   const rivals=ctx.players.filter(player=>player.alive&&player.i!==p.i);
   const reserve=botReserve(p);
-  if(id==='computer')return p.bank>0&&p.cash<botCashTarget(p,ctx.players,ctx.lots)
-    ?Math.min(p.bank,botCashTarget(p,ctx.players,ctx.lots)-p.cash)*.85-50:-Infinity;
+  if(id==='computer'){
+    if(p.bank<=0||p.cash>=botCashTarget(p,ctx.players,ctx.lots))return -Infinity;
+    const amount=Math.min(p.bank,botCashTarget(p,ctx.players,ctx.lots)-p.cash);
+    return amount*.85+(p.cash<reserve?180:0);
+  }
   if(id==='remote-control')return chooseBotRoll(p,ctx)!==null?300:-Infinity;
   if(id==='thief')return Math.max(0,...rivals.map(rival=>Math.floor(rival.cash*.25)))*1.4-125;
   if(id==='toolkit'){
