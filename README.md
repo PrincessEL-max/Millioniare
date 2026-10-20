@@ -9,7 +9,7 @@ Kontrol zoom papan: gunakan scroll mouse/trackpad atau tombol +, - dan 0 (reset)
 
 ## Menu awal dan perlengkapan karakter
 - Halaman awal berada di `ui/main-menu.js`; sebelum mulai, pilih mode, salah satu dari enam map, lalu karakter. Model karakter dan model 3D perlengkapan awal ditampilkan pada pemilihan karakter.
-- Karakter: Mimi, Luna, PrincessEL, Rin, Kai, dan Tafa (4 perempuan, 2 laki-laki). Setiap karakter mulai dengan perlengkapan sesuai pemilihan menu.
+- Karakter: Mimi, Luna, PrincessEL, Rin, Tafa, dan Dika (4 perempuan, 2 laki-laki). Catatan: id internal `kai` menampilkan nama Tafa dan id `tafa` menampilkan nama Dika; id dipakai di simpanan game dan suara, jangan diganti sembarangan. Setiap karakter mulai dengan perlengkapan sesuai pemilihan menu.
 - Map Jakarta: cash/bank $1.500; Jogja: $2.000/$2.000; Solo: $2.500/$2.500; Malang: $2.000/$2.000; Bandung: $2.500/$2.500; Indonesia: $5.000/$5.000.
 - Efek suara dan musik permainan berada di `src/audio-assets/`; pengaturan **Sound effects** dan **Music** di menu awal mengaktifkan atau menonaktifkannya.
 
@@ -34,7 +34,7 @@ Kontrol zoom papan: gunakan scroll mouse/trackpad atau tombol +, - dan 0 (reset)
 - Pet dinilai sesuai efeknya terhadap strategi dan kondisi keuangan komputer.
 
 ## Struktur src/
-- map.js: bentuk jaringan jalan, titik start, lot, ikon, dan pohon. Persimpangan memilih arah acak; jalur buntu membuat pemain berbalik. Lahan kecil berharga 135/sewa dasar 25; lahan besar berukuran 4x, memakai dua petak jalan, dan berharga 200/sewa dasar 50. Sewa dikalikan jumlah petak yang dimiliki pemain pada baris tersebut.
+- map.js: bentuk jaringan jalan, titik start, lot, ikon, dan pohon. Persimpangan memilih arah acak; jalur buntu membuat pemain berbalik. Harga dan sewa lahan ditentukan oleh tingkat bintang area (`property-tiers.js` + tabel `PROPERTY_TIERS` di `config.js`): lahan kecil $100–$200, lahan besar (4x, memakai dua petak jalan) $200–$325, dengan harga bangunan dan sewa per level yang berbeda tiap bintang.
 - items.js: katalog barang toko bus, mengambil item berharga dari `ui/items.js`. Toko menawarkan stok acak 2-11 alat per kunjungan dan menyembunyikan alat yang sudah ada di inventaris. Empat Street Sign arah layar tetap (↑ atas, → kanan, ↓ bawah, ← kiri) masing-masing seharga $75; Bomb ($50), Broom ($50), Computer ($50), Stop Sign ($125), Demolition ($175), For Rent ($150), Remote Control ($125), Lawyer ($325), Toolkit ($125), dan Thief ($125).
 - config.js: harga, sewa, warna pemain, fungsi bantu.
 - scene.js: renderer, kamera, cahaya.
@@ -59,3 +59,10 @@ Komponen `ui/property-card.js` dipakai untuk pembelian lahan dan peningkatan rum
 - **Lawyer** otomatis mengambil alih lahan lawan saat pion berhenti di sana dan menampilkan model alat. **Thief** mencuri 25% uang tunai pemain lain, bukan saldo bank, dengan model lebih besar di dekat target.
 - Hewan peliharaan liar hanya dipungut jika pion mengakhiri gerakan tepat di petaknya; melintasi petak hewan tidak memungutnya.
 - Rintangan dapat dipasang lewat **Alat → pilih item → arahkan kursor ke petak jalan** untuk melihat pratinjau, lalu klik petak sasaran. Item lainnya dapat dipakai lewat **Alat → pilih item** sebelum dadu dilempar. Komputer memakai alat otomatis dengan pilihan sesuai kondisi permainan.
+
+## Performa dan baterai (HP)
+
+- Layar sentuh dirender lebih ringan: antialias dimatikan, pixel ratio maksimal 1,25, dan render dibatasi sekitar 30 FPS (desktop sekitar 60 FPS). Atur di `src/scene.js` (`MOBILE_PIXEL_RATIO`) dan `src/game.js` (`FRAME_MS`).
+- Render dan musik dijeda otomatis saat app/layar tidak aktif (`visibilitychange`).
+- Thumbnail alat dan pratinjau properti di-cache, jadi toko dan kartu properti tidak membuat ulang WebGL context setiap dibuka.
+- Build APK memakai variabel dari `.env.local` saat `npm run android:sync`. Variabel yang diisi di Vercel tidak ikut ke APK lokal; tanpa `.env.local` mode online di APK tidak akan berfungsi.

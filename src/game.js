@@ -3,11 +3,11 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { SkeletonUtils } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { $, BN, BUILD, HOTEL, RENT, sleep, tween } from './config.js';
 import { directedNeighbor, LINKS, MAP, MAP_ID, T, nextPos, sn, tp } from './map.js';
-import { beginToolZoom, cameraOffset, cam, constrainWorldView, panOffset, renderer, scene, setCameraControlsLocked } from './scene.js';
+import { beginToolZoom, cameraOffset, cam, constrainWorldView, isMobileScreen, panOffset, renderer, scene, setCameraControlsLocked } from './scene.js';
 import { HOSPITAL_POSITION, L, LOT_TARGET_MESHES, drawLot, flashLot, mergeStaticMeshes, setB, setLotDestroyed, updateLotRatingVisibility, updateWorldDecorations } from './world.js';
 import { configurePlayers, laneOffset, P, place, portrait } from './players.js';
 import { die, face, rollDie } from './dice.js';
-import { G, acceptBoardTarget, ask, ban, buyPropertyDlg, chooseAuctionBid, chooseDieValue, chooseGameMode, chooseOne, chooseBoardTarget, hud, load, onlineLobby, playerEvent, previewBoardTarget, setItemUseHandler, setupGame, shop, showRemotePrompt, showRemoteWithdrawal, thumb, waitingForHost, withdrawDlg } from './ui.js';
+import { G, acceptBoardTarget, ask, ban, clr, buyPropertyDlg, chooseAuctionBid, chooseDieValue, chooseGameMode, chooseOne, chooseBoardTarget, hud, load, onlineLobby, playerEvent, previewBoardTarget, setItemUseHandler, setupGame, shop, showRemotePrompt, showRemoteWithdrawal, thumb, waitingForHost, withdrawDlg } from './ui.js';
 import { getPeerCharacterId, isGuest, isHost, isOnline, myPlayerIndex, requestRemoteItemUse, respondToBankRequest, sendDiceRoll, sendProgress, sendState, setNetworkHandlers, startOnlineGame, waitForGameStart, waitForRemoteRoll } from './multiplayer.js';
 import { createItemArrow } from '../tools/item-arrow.js';
 import { createItemBomb } from '../tools/item-bomb.js';
@@ -26,7 +26,7 @@ import { pickThiefTarget, playHeist } from '../tools/thief-ui.js';
 import { fxShake } from '../tools/fx-kit.js';
 import { confirmPreview } from '../tools/confirm-dialog.js';
 import { showBankDialog } from '../Bank/bank-dialog.js';
-import { playEffect, playHammerTuk, playPetArrival, playPlayerTurn, startGameMusic, stopGameMusic } from './audio.js';
+import { pauseGameMusic, playEffect, playHammerTuk, playPetArrival, playPlayerTurn, resumeGameMusic, startGameMusic, stopGameMusic } from './audio.js';
 import { botCashTarget, botReserve, botShouldUseItem, chooseBotRoll, chooseBotTarget, shouldBuyLot, shouldUpgradeLot } from './bot.js';
 import babyUrl from '../pets-pack/models/baby.glb?url';
 import catBlackUrl from '../pets-pack/models/cat_black.glb?url';
@@ -310,10 +310,17 @@ function validNextMove(move,p){
 function pay(p,amount,to){
   const sold=[];
   const saleValue=lot=>lot.price+lot.buildCosts.slice(1,lot.lv+1).reduce((sum,cost)=>sum+cost,0);
-  const assets=()=>[...new Set(L)].map((lot,index)=>({lot,index}))
-    .filter(({lot})=>lot&&!lot.destroyed&&lot.o===p.i)
-    .map(asset=>({...asset,value:saleValue(asset.lot)}))
-    .sort((a,b)=>a.value-b.value);
+  // PENTING: index harus nomor petak (tile) yang sebenarnya. Jangan pakai [...new Set(L)] di sini:
+  // L berlubang (petak jalan kosong) dan satu lahan bisa menempati beberapa petak, jadi indeks Set != indeks petak.
+  const assets=()=>{
+    const seen=new Set(),list=[];
+    L.forEach((lot,index)=>{
+      if(!lot||seen.has(lot))return;
+      seen.add(lot);
+      if(!lot.destroyed&&lot.o===p.i)list.push({lot,index,value:saleValue(lot)});
+    });
+    return list.sort((a,b)=>a.value-b.value);
+  };
   while(p.cash+p.bank<amount+200){
     const asset=assets()[0];
     if(!asset)break;
@@ -1005,7 +1012,39 @@ function syncMovement(p,force=false){
   sendProgress({player:p.i,x:p.m.position.x,y:p.m.position.y,z:p.m.position.z,rotation:p.m.rotation.y,walking:!!p.networkWalking})
     ?.catch(error=>console.error('Online movement sync error:',error));
 }
-(function loop(){const now=performance.now(),delta=Math.min((now-lastPetFrame)/1000,.1);lastPetFrame=now;if(isGuest())P.forEach(p=>{if(p.networkTarget){p.m.position.lerp(p.networkTarget,.32);const turn=Math.atan2(Math.sin(p.networkRotation-p.m.rotation.y),Math.cos(p.networkRotation-p.m.rotation.y));p.m.rotation.y+=turn*.32}});foc.lerp(focusOverride||(now<petFocusUntil?petFocusTarget:P[G.cur].m.position),.07);target.copy(foc).add(panOffset);constrainWorldView(target,foc);updateLotRatingVisibility(target);cam.position.copy(target).add(cameraOffset).add(demolitionShake).add(fxShake);cam.lookAt(target);P.forEach(p=>p.m.userData.update?.(now));L.forEach(l=>l?.b?.userData.update?.(now));obstacles.forEach(item=>item.model.userData.update?.(now));petVisuals.forEach(visual=>visual.mixer.update(delta));hospitalMixer?.update(delta);updateWorldDecorations(delta);renderer.render(scene,cam);requestAnimationFrame(loop)})();
+const FRAME_MS=isMobileScreen?1000/30:1000/60;
+let lastRenderAt=0,frameCounter=0;
+const lerpFactor=(rate,seconds)=>1-Math.pow(1-rate,seconds*60);
+document.addEventListener('visibilitychange',()=>{document.hidden?pauseGameMusic():resumeGameMusic()});
+(function loop(){
+  requestAnimationFrame(loop);
+  if(document.hidden)return;
+  const now=performance.now();
+  if(now-lastRenderAt<FRAME_MS-4)return;
+  lastRenderAt=now;
+  const delta=Math.min((now-lastPetFrame)/1000,.1);lastPetFrame=now;
+  if(isGuest()){
+    const follow=lerpFactor(.32,delta);
+    P.forEach(p=>{if(p.networkTarget){
+      p.m.position.lerp(p.networkTarget,follow);
+      const turn=Math.atan2(Math.sin(p.networkRotation-p.m.rotation.y),Math.cos(p.networkRotation-p.m.rotation.y));
+      p.m.rotation.y+=turn*follow;
+    }});
+  }
+  foc.lerp(focusOverride||(now<petFocusUntil?petFocusTarget:P[G.cur].m.position),lerpFactor(.07,delta));
+  target.copy(foc).add(panOffset);
+  constrainWorldView(target,foc);
+  if(frameCounter++%6===0)updateLotRatingVisibility(target);
+  cam.position.copy(target).add(cameraOffset).add(demolitionShake).add(fxShake);
+  cam.lookAt(target);
+  P.forEach(p=>p.m.userData.update?.(now));
+  L.forEach(l=>l?.b?.userData.update?.(now));
+  obstacles.forEach(item=>item.model.userData.update?.(now));
+  petVisuals.forEach(visual=>visual.mixer.update(delta));
+  hospitalMixer?.update(delta);
+  updateWorldDecorations(delta);
+  renderer.render(scene,cam);
+})();
 setNetworkHandlers({
   onState:state=>{try{applySnapshot(state)}catch(error){console.error(error)}},
   onProgress:progress=>{
@@ -1052,7 +1091,10 @@ setNetworkHandlers({
 });
 async function main(){
   startGameMusic();
-  while(!G.over){const p=P[G.cur];focusCameraOnPlayer(p);hud();
+  while(!G.over){const p=P[G.cur];
+    if(!P.some(x=>x.alive)){G.over=true;break}
+    try{
+    focusCameraOnPlayer(p);hud();
     if(isHost())await sendState(snapshot());
     if(p.alive&&p.hospitalTurns>0){
       p.hospitalTurns--;
@@ -1082,10 +1124,19 @@ async function main(){
       });await ban(face(v),'#9fb0c2',String(v),'GO',900);
       await step(p,v);
       if(isHost())await sendState(snapshot());
-      die.visible=false;await collectPet(p,p.pos);await land(p);check()}
+      die.visible=false;await collectPet(p,p.pos);await land(p);check();
+      if(p.h&&!p.alive&&!G.over&&!isOnline()){
+        const spectate=await ask(portrait(p,'sad'),'KAMU BANGKRUT 💥','Lanjut menonton sampai selesai?','👀','🔁',22);
+        if(!spectate){location.reload();return}
+      }}
     finishPetTurn(p);
     advancePetSpawner();
     if(isHost())await sendState(snapshot());
+    }catch(error){
+      // Error di satu giliran tidak boleh membekukan seluruh permainan.
+      console.error('Giliran gagal, lanjut ke pemain berikutnya:',error);
+      G.idle=false;G.wake=null;clr();die.visible=false;await sleep(300);
+    }
     G.cur=(G.cur+1)%P.length}}
 (async()=>{
   const startupOptions=JSON.parse(sessionStorage.getItem('mt3d-start-options')||'null');

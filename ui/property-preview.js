@@ -1,7 +1,15 @@
 import * as THREE from 'three';
 import { createPropertyModel, disposePropertyModel } from './property-model.js';
 
+const previewCache=new Map();
 export function propertyPreview(level,hotel){
+  const cacheKey=`${level}:${hotel?1:0}`;
+  if(previewCache.has(cacheKey))return previewCache.get(cacheKey);
+  const image=renderPropertyPreview(level,hotel);
+  if(image)previewCache.set(cacheKey,image);
+  return image;
+}
+function renderPropertyPreview(level,hotel){
   const footprint=hotel?3.8:1.9;
   const model=createPropertyModel(level,hotel,footprint);
   if(!model)return '';

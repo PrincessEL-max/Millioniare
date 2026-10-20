@@ -37,7 +37,8 @@ export function createCupGame(container,opts={}){
   const R=new THREE.WebGLRenderer({antialias:true,alpha:true});
   if('useLegacyLights' in R)R.useLegacyLights=true;           // samakan tampilan di Three.js baru
   const K=REV>=165?Math.PI:1;
-  R.setPixelRatio(Math.min(window.devicePixelRatio||1,2));R.shadowMap.enabled=true;R.shadowMap.type=THREE.PCFSoftShadowMap;
+  const touchScreen=matchMedia('(pointer: coarse)').matches;
+  R.setPixelRatio(Math.min(window.devicePixelRatio||1,touchScreen?1.25:2));R.shadowMap.enabled=true;R.shadowMap.type=touchScreen?THREE.PCFShadowMap:THREE.PCFSoftShadowMap;
   container.appendChild(R.domElement);
   const S=new THREE.Scene(),C=new THREE.PerspectiveCamera(38,1,.1,80);
   S.add(new THREE.HemisphereLight(0xffffff,0x9bb7d6,.95*K));
@@ -221,6 +222,6 @@ export function createCupGame(container,opts={}){
       });
       geometries.forEach(geometry=>geometry.dispose());materials.forEach(material=>material.dispose());
       textures.forEach(texture=>texture.dispose());
-      R.dispose();cv.remove();if(ui)ui.remove();container.classList.remove('cg-root')}
+      R.dispose();R.forceContextLoss();cv.remove();if(ui)ui.remove();container.classList.remove('cg-root')}
   };
 }

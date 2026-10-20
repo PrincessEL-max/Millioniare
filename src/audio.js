@@ -88,7 +88,9 @@ function playPlayerLine(player, line) {
   audio.volume = 0.8;
   activeEffects.add(audio);
   return new Promise(resolve => {
+    let guard = 0;
     const finish = () => {
+      clearTimeout(guard);
       activeEffects.delete(audio);
       audio.removeEventListener('ended', finish);
       audio.removeEventListener('error', onError);
@@ -100,6 +102,8 @@ function playPlayerLine(player, line) {
     };
     audio.addEventListener('ended', finish, { once: true });
     audio.addEventListener('error', onError, { once: true });
+    // Pengaman: jika suara macet dan event 'ended' tidak pernah datang, game tetap lanjut.
+    guard = setTimeout(() => { audio.pause(); finish(); }, 8000);
     audio.play().catch(error => {
       console.warn('Pemutaran audio diblokir atau gagal:', error);
       finish();
@@ -147,4 +151,13 @@ export function stopGameMusic() {
   musicAudio.pause();
   musicAudio.currentTime = 0;
   musicAudio = null;
+}
+
+export function pauseGameMusic() {
+  if (musicAudio) musicAudio.pause();
+}
+
+export function resumeGameMusic() {
+  if (!musicAudio || !options().music) return;
+  musicAudio.play().catch(error => console.warn('BGM gagal dilanjutkan:', error));
 }

@@ -528,6 +528,7 @@ function winTex(col,rep){const c=cvs(128),g=c.getContext('2d');g.scale(4,4);g.fi
 const tower=(w,h,c)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,w),winTex(c,Math.max(1,Math.round(h*1.4))));m.position.y=h/2;return m};
 export function setB(i){
   const l=L[i];
+  if(!l)return;
   if(l.b){scene.remove(l.b);disposePropertyModel(l.b);l.b=null}
   if(!l.lv)return;
   const large=l.s==2,building=createPropertyModel(l.lv,large,large?3.8:1.9);

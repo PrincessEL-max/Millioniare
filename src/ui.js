@@ -39,7 +39,7 @@ export function playerEvent(p,mood,title,message,{duration=850,waitForAudio=true
     layer.append(card);
     root.append(layer);
     const play=mood==='happy'?playPlayerWin(p):playPlayerLose(p);
-    if(waitForAudio)await Promise.all([play,new Promise(resolve=>setTimeout(resolve,duration))]);
+    if(waitForAudio)await Promise.all([Promise.race([play,new Promise(resolve=>setTimeout(resolve,duration+3000))]),new Promise(resolve=>setTimeout(resolve,duration))]);
     else await new Promise(resolve=>setTimeout(resolve,duration));
     layer.remove();
   };
@@ -71,7 +71,7 @@ const ov=$('ov');
 $('bc').innerHTML=SIDE_ICONS.briefcase;
 $('ch').innerHTML=SIDE_ICONS.chest;
 export const G={cur:0,over:false,idle:false,wake:null};
-const clr=()=>{ov.innerHTML=''};
+export const clr=()=>{ov.innerHTML=''};
 let itemUseHandler=null,boardTargetRequest=null;
 function card(...n){const d=document.createElement('div');d.className='card';d.append(...n);ov.innerHTML='';ov.append(d)}
 function txt(a,b,s1=26,s2=30){const d=document.createElement('div');d.className='tx';d.innerHTML=`<div style="font-size:${s1}px">${a}</div><div style="font-size:${s2}px">${b||''}</div>`;return d}
