@@ -1,0 +1,91 @@
+diff --git a/src/audio.js b/src/audio.js
+index 5a5a8d4..69da207 100644
+--- a/src/audio.js
++++ b/src/audio.js
+@@ -88,7 +88,9 @@ function playPlayerLine(player, line) {
+   audio.volume = 0.8;
+   activeEffects.add(audio);
+   return new Promise(resolve => {
++    let guard = 0;
+     const finish = () => {
++      clearTimeout(guard);
+       activeEffects.delete(audio);
+       audio.removeEventListener('ended', finish);
+       audio.removeEventListener('error', onError);
+@@ -100,6 +102,8 @@ function playPlayerLine(player, line) {
+     };
+     audio.addEventListener('ended', finish, { once: true });
+     audio.addEventListener('error', onError, { once: true });
++    // Pengaman: jika suara macet dan event 'ended' tidak pernah datang, game tetap lanjut.
++    guard = setTimeout(() => { audio.pause(); finish(); }, 8000);
+     audio.play().catch(error => {
+       console.warn('Pemutaran audio diblokir atau gagal:', error);
+       finish();
+diff --git a/src/game.js b/src/game.js
+index 3d0799c..0e9c1a9 100644
+--- a/src/game.js
++++ b/src/game.js
+@@ -7,7 +7,7 @@ import { beginToolZoom, cameraOffset, cam, constrainWorldView, isMobileScreen, p
+ import { HOSPITAL_POSITION, L, LOT_TARGET_MESHES, drawLot, flashLot, mergeStaticMeshes, setB, setLotDestroyed, updateLotRatingVisibility, updateWorldDecorations } from './world.js';
+ import { configurePlayers, laneOffset, P, place, portrait } from './players.js';
+ import { die, face, rollDie } from './dice.js';
+-import { G, acceptBoardTarget, ask, ban, buyPropertyDlg, chooseAuctionBid, chooseDieValue, chooseGameMode, chooseOne, chooseBoardTarget, hud, load, onlineLobby, playerEvent, previewBoardTarget, setItemUseHandler, setupGame, shop, showRemotePrompt, showRemoteWithdrawal, thumb, waitingForHost, withdrawDlg } from './ui.js';
++import { G, acceptBoardTarget, ask, ban, clr, buyPropertyDlg, chooseAuctionBid, chooseDieValue, chooseGameMode, chooseOne, chooseBoardTarget, hud, load, onlineLobby, playerEvent, previewBoardTarget, setItemUseHandler, setupGame, shop, showRemotePrompt, showRemoteWithdrawal, thumb, waitingForHost, withdrawDlg } from './ui.js';
+ import { getPeerCharacterId, isGuest, isHost, isOnline, myPlayerIndex, requestRemoteItemUse, respondToBankRequest, sendDiceRoll, sendProgress, sendState, setNetworkHandlers, startOnlineGame, waitForGameStart, waitForRemoteRoll } from './multiplayer.js';
+ import { createItemArrow } from '../tools/item-arrow.js';
+ import { createItemBomb } from '../tools/item-bomb.js';
+@@ -979,7 +979,10 @@ setNetworkHandlers({
+ });
+ async function main(){
+   startGameMusic();
+-  while(!G.over){const p=P[G.cur];focusCameraOnPlayer(p);hud();
++  while(!G.over){const p=P[G.cur];
++    if(!P.some(x=>x.alive)){G.over=true;break}
++    try{
++    focusCameraOnPlayer(p);hud();
+     if(isHost())await sendState(snapshot());
+     if(p.alive&&p.hospitalTurns>0){
+       p.hospitalTurns--;
+@@ -1009,10 +1012,19 @@ async function main(){
+       });await ban(face(v),'#9fb0c2',String(v),'GO',900);
+       await step(p,v);
+       if(isHost())await sendState(snapshot());
+-      die.visible=false;await collectPet(p,p.pos);await land(p);check()}
++      die.visible=false;await collectPet(p,p.pos);await land(p);check();
++      if(p.h&&!p.alive&&!G.over&&!isOnline()){
++        const spectate=await ask(portrait(p,'sad'),'KAMU BANGKRUT 💥','Lanjut menonton sampai selesai?','👀','🔁',22);
++        if(!spectate){location.reload();return}
++      }}
+     finishPetTurn(p);
+     advancePetSpawner();
+     if(isHost())await sendState(snapshot());
++    }catch(error){
++      // Error di satu giliran tidak boleh membekukan seluruh permainan.
++      console.error('Giliran gagal, lanjut ke pemain berikutnya:',error);
++      G.idle=false;G.wake=null;clr();die.visible=false;await sleep(300);
++    }
+     G.cur=(G.cur+1)%P.length}}
+ (async()=>{
+   const startupOptions=JSON.parse(sessionStorage.getItem('mt3d-start-options')||'null');
+diff --git a/src/ui.js b/src/ui.js
+index eec83ee..a78d817 100644
+--- a/src/ui.js
++++ b/src/ui.js
+@@ -39,7 +39,7 @@ export function playerEvent(p,mood,title,message,{duration=850,waitForAudio=true
+     layer.append(card);
+     root.append(layer);
+     const play=mood==='happy'?playPlayerWin(p):playPlayerLose(p);
+-    if(waitForAudio)await Promise.all([play,new Promise(resolve=>setTimeout(resolve,duration))]);
++    if(waitForAudio)await Promise.all([Promise.race([play,new Promise(resolve=>setTimeout(resolve,duration+3000))]),new Promise(resolve=>setTimeout(resolve,duration))]);
+     else await new Promise(resolve=>setTimeout(resolve,duration));
+     layer.remove();
+   };
+@@ -71,7 +71,7 @@ const ov=$('ov');
+ $('bc').innerHTML=SIDE_ICONS.briefcase;
+ $('ch').innerHTML=SIDE_ICONS.chest;
+ export const G={cur:0,over:false,idle:false,wake:null};
+-const clr=()=>{ov.innerHTML=''};
++export const clr=()=>{ov.innerHTML=''};
+ let itemUseHandler=null,boardTargetRequest=null;
+ function card(...n){const d=document.createElement('div');d.className='card';d.append(...n);ov.innerHTML='';ov.append(d)}
+ function txt(a,b,s1=26,s2=30){const d=document.createElement('div');d.className='tx';d.innerHTML=`<div style="font-size:${s1}px">${a}</div><div style="font-size:${s2}px">${b||''}</div>`;return d}

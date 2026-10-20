@@ -12,6 +12,7 @@ import {
   createItemRemote,
   createItemThief
 } from '../tools/item-index.js';
+import { createStopSignModel } from '../tools/stopsign.js';
 
 const FACTORIES={
   'street-sign-front':()=>createItemArrow({dir:'front'}),
@@ -21,7 +22,7 @@ const FACTORIES={
   bomb:createItemBomb,
   broom:createItemBroom,
   computer:createItemComputer,
-  'stop-sign':createItemCone,
+  'stop-sign':createStopSignModel,
   demolition:createItemDemolition,
   'for-rent':createItemForRent,
   'remote-control':createItemRemote,
@@ -35,7 +36,7 @@ function dispose(model){
     if(!object.isMesh)return;
     object.geometry?.dispose();
     const materials=Array.isArray(object.material)?object.material:[object.material];
-    materials.forEach(material=>{material?.map?.dispose();material?.dispose()});
+    materials.forEach(material=>{if(!material?.map?._shared)material?.map?.dispose();material?.dispose()});
   });
 }
 

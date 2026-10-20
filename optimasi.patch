@@ -1,0 +1,497 @@
+diff --git a/README.md b/README.md
+index 70bdfc6..c8cee4b 100644
+--- a/README.md
++++ b/README.md
+@@ -9,7 +9,7 @@ Kontrol zoom papan: gunakan scroll mouse/trackpad atau tombol +, - dan 0 (reset)
+ 
+ ## Menu awal dan perlengkapan karakter
+ - Halaman awal berada di `ui/main-menu.js`; sebelum mulai, pilih mode, salah satu dari enam map, lalu karakter. Model karakter dan model 3D perlengkapan awal ditampilkan pada pemilihan karakter.
+-- Karakter: Mimi, Luna, PrincessEL, Rin, Kai, dan Tafa (4 perempuan, 2 laki-laki). Setiap karakter mulai dengan perlengkapan sesuai pemilihan menu.
++- Karakter: Mimi, Luna, PrincessEL, Rin, Tafa, dan Dika (4 perempuan, 2 laki-laki). Catatan: id internal `kai` menampilkan nama Tafa dan id `tafa` menampilkan nama Dika; id dipakai di simpanan game dan suara, jangan diganti sembarangan. Setiap karakter mulai dengan perlengkapan sesuai pemilihan menu.
+ - Map Jakarta: cash/bank $1.500; Jogja: $2.000/$2.000; Solo: $2.500/$2.500; Malang: $2.000/$2.000; Bandung: $2.500/$2.500; Indonesia: $5.000/$5.000.
+ - Efek suara dan musik permainan berada di `src/audio-assets/`; pengaturan **Sound effects** dan **Music** di menu awal mengaktifkan atau menonaktifkannya.
+ 
+@@ -34,7 +34,7 @@ Kontrol zoom papan: gunakan scroll mouse/trackpad atau tombol +, - dan 0 (reset)
+ - Pet dinilai sesuai efeknya terhadap strategi dan kondisi keuangan komputer.
+ 
+ ## Struktur src/
+-- map.js: bentuk jaringan jalan, titik start, lot, ikon, dan pohon. Persimpangan memilih arah acak; jalur buntu membuat pemain berbalik. Lahan kecil berharga 135/sewa dasar 25; lahan besar berukuran 4x, memakai dua petak jalan, dan berharga 200/sewa dasar 50. Sewa dikalikan jumlah petak yang dimiliki pemain pada baris tersebut.
++- map.js: bentuk jaringan jalan, titik start, lot, ikon, dan pohon. Persimpangan memilih arah acak; jalur buntu membuat pemain berbalik. Harga dan sewa lahan ditentukan oleh tingkat bintang area (`property-tiers.js` + tabel `PROPERTY_TIERS` di `config.js`): lahan kecil $100–$200, lahan besar (4x, memakai dua petak jalan) $200–$325, dengan harga bangunan dan sewa per level yang berbeda tiap bintang.
+ - items.js: katalog barang toko bus, mengambil item berharga dari `ui/items.js`. Toko menawarkan stok acak 2-11 alat per kunjungan dan menyembunyikan alat yang sudah ada di inventaris. Empat Street Sign arah layar tetap (↑ atas, → kanan, ↓ bawah, ← kiri) masing-masing seharga $75; Bomb ($50), Broom ($50), Computer ($50), Stop Sign ($125), Demolition ($175), For Rent ($150), Remote Control ($125), Lawyer ($325), Toolkit ($125), dan Thief ($125).
+ - config.js: harga, sewa, warna pemain, fungsi bantu.
+ - scene.js: renderer, kamera, cahaya.
+@@ -59,3 +59,10 @@ Komponen `ui/property-card.js` dipakai untuk pembelian lahan dan peningkatan rum
+ - **Lawyer** otomatis mengambil alih lahan lawan saat pion berhenti di sana dan menampilkan model alat. **Thief** mencuri 25% uang tunai pemain lain, bukan saldo bank, dengan model lebih besar di dekat target.
+ - Hewan peliharaan liar hanya dipungut jika pion mengakhiri gerakan tepat di petaknya; melintasi petak hewan tidak memungutnya.
+ - Rintangan dapat dipasang lewat **Alat → pilih item → arahkan kursor ke petak jalan** untuk melihat pratinjau, lalu klik petak sasaran. Item lainnya dapat dipakai lewat **Alat → pilih item** sebelum dadu dilempar. Komputer memakai alat otomatis dengan pilihan sesuai kondisi permainan.
++
++## Performa dan baterai (HP)
++
++- Layar sentuh dirender lebih ringan: antialias dimatikan, pixel ratio maksimal 1,25, dan render dibatasi sekitar 30 FPS (desktop sekitar 60 FPS). Atur di `src/scene.js` (`MOBILE_PIXEL_RATIO`) dan `src/game.js` (`FRAME_MS`).
++- Render dan musik dijeda otomatis saat app/layar tidak aktif (`visibilitychange`).
++- Thumbnail alat dan pratinjau properti di-cache, jadi toko dan kartu properti tidak membuat ulang WebGL context setiap dibuka.
++- Build APK memakai variabel dari `.env.local` saat `npm run android:sync`. Variabel yang diisi di Vercel TIDAK ikut ke APK lokal; tanpa `.env.local` mode online di APK tidak akan berfungsi.
+diff --git a/package-lock.json b/package-lock.json
+index 7974bb7..482132f 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -10,7 +10,6 @@
+       "dependencies": {
+         "@capacitor/android": "^8.5.3",
+         "@capacitor/core": "^8.5.3",
+-        "@supabase/server": "^1.9.1",
+         "@supabase/supabase-js": "^2.117.3",
+         "three": "0.128.0"
+       },
+@@ -1014,26 +1013,6 @@
+         "node": ">=22.0.0"
+       }
+     },
+-    "node_modules/@supabase/middleware": {
+-      "version": "1.0.0",
+-      "resolved": "https://registry.npmjs.org/@supabase/middleware/-/middleware-1.0.0.tgz",
+-      "integrity": "sha512-ecA+z/o5E9sB+quuupGt8d7QjrnD4BBwZr+Qthm0uj6CtL/+yvAUTDlknhGuTbUidvx5CxBHJ1R3H96UjDpgyg==",
+-      "license": "MIT",
+-      "dependencies": {
+-        "std-env": "^4.2.0"
+-      },
+-      "engines": {
+-        "node": ">=22"
+-      },
+-      "peerDependencies": {
+-        "typescript": ">=5.4"
+-      },
+-      "peerDependenciesMeta": {
+-        "typescript": {
+-          "optional": true
+-        }
+-      }
+-    },
+     "node_modules/@supabase/phoenix": {
+       "version": "0.4.5",
+       "resolved": "https://registry.npmjs.org/@supabase/phoenix/-/phoenix-0.4.5.tgz",
+@@ -1065,44 +1044,6 @@
+         "node": ">=22.0.0"
+       }
+     },
+-    "node_modules/@supabase/server": {
+-      "version": "1.9.1",
+-      "resolved": "https://registry.npmjs.org/@supabase/server/-/server-1.9.1.tgz",
+-      "integrity": "sha512-AW/8aZrX5nHP3OwYMamA1hxERuL+RO7yw0h3oUfdXYKIxkdoRVm0ELzzv8wLGCk97aeVjBQ4ixZ2h66jPCfJjA==",
+-      "license": "MIT",
+-      "dependencies": {
+-        "@supabase/middleware": "^1.0.0",
+-        "jose": "^6.2.0"
+-      },
+-      "engines": {
+-        "node": ">=22"
+-      },
+-      "peerDependencies": {
+-        "@nestjs/common": "^10.0.0 || ^11.0.0",
+-        "@supabase/supabase-js": "^2.0.0",
+-        "elysia": "^1.4.0",
+-        "h3": "^2.0.0",
+-        "hono": "^4.0.0",
+-        "pg": "^8.0.0"
+-      },
+-      "peerDependenciesMeta": {
+-        "@nestjs/common": {
+-          "optional": true
+-        },
+-        "elysia": {
+-          "optional": true
+-        },
+-        "h3": {
+-          "optional": true
+-        },
+-        "hono": {
+-          "optional": true
+-        },
+-        "pg": {
+-          "optional": true
+-        }
+-      }
+-    },
+     "node_modules/@supabase/storage-js": {
+       "version": "2.117.3",
+       "resolved": "https://registry.npmjs.org/@supabase/storage-js/-/storage-js-2.117.3.tgz",
+@@ -1606,15 +1547,6 @@
+       "dev": true,
+       "license": "ISC"
+     },
+-    "node_modules/jose": {
+-      "version": "6.2.12",
+-      "resolved": "https://registry.npmjs.org/jose/-/jose-6.2.12.tgz",
+-      "integrity": "sha512-9NiFmJEex0sy2Dk58j2UGBSHgUs2ypF9eZSu4L6vjOX3Dp96Sw1F3uL+H+D1sx02jZZdzUT0HgvCy59CuvXcWw==",
+-      "license": "MIT",
+-      "funding": {
+-        "url": "https://github.com/sponsors/panva"
+-      }
+-    },
+     "node_modules/jsonfile": {
+       "version": "6.2.1",
+       "resolved": "https://registry.npmjs.org/jsonfile/-/jsonfile-6.2.1.tgz",
+@@ -2095,12 +2027,6 @@
+         "node": ">= 10.x"
+       }
+     },
+-    "node_modules/std-env": {
+-      "version": "4.3.0",
+-      "resolved": "https://registry.npmjs.org/std-env/-/std-env-4.3.0.tgz",
+-      "integrity": "sha512-OtU/EgQ1kIm5KwqQpBC6ZEMXrZRui11w8zgfTWp8cdO9B8OaPsbA8bTHO2P+HNo1VlUTGMVBwPhydu6poeXiag==",
+-      "license": "MIT"
+-    },
+     "node_modules/stream-buffers": {
+       "version": "2.2.0",
+       "resolved": "https://registry.npmjs.org/stream-buffers/-/stream-buffers-2.2.0.tgz",
+diff --git a/package.json b/package.json
+index 522bd5e..63a2a31 100644
+--- a/package.json
++++ b/package.json
+@@ -13,7 +13,6 @@
+   "dependencies": {
+     "@capacitor/android": "^8.5.3",
+     "@capacitor/core": "^8.5.3",
+-    "@supabase/server": "^1.9.1",
+     "@supabase/supabase-js": "^2.117.3",
+     "three": "0.128.0"
+   },
+diff --git a/src/audio.js b/src/audio.js
+index 2827443..5a5a8d4 100644
+--- a/src/audio.js
++++ b/src/audio.js
+@@ -148,3 +148,13 @@ export function stopGameMusic() {
+   musicAudio.currentTime = 0;
+   musicAudio = null;
+ }
++
++// Jeda musik saat app/layar tidak aktif, lanjutkan saat kembali (hemat baterai).
++export function pauseGameMusic() {
++  if (musicAudio) musicAudio.pause();
++}
++
++export function resumeGameMusic() {
++  if (!musicAudio || !options().music) return;
++  musicAudio.play().catch(error => console.warn('BGM gagal dilanjutkan:', error));
++}
+diff --git a/src/cup-game.js b/src/cup-game.js
+index 3085795..9b95204 100644
+--- a/src/cup-game.js
++++ b/src/cup-game.js
+@@ -37,7 +37,8 @@ export function createCupGame(container,opts={}){
+   const R=new THREE.WebGLRenderer({antialias:true,alpha:true});
+   if('useLegacyLights' in R)R.useLegacyLights=true;           // samakan tampilan di Three.js baru
+   const K=REV>=165?Math.PI:1;
+-  R.setPixelRatio(Math.min(window.devicePixelRatio||1,2));R.shadowMap.enabled=true;R.shadowMap.type=THREE.PCFSoftShadowMap;
++  const touchScreen=matchMedia('(pointer: coarse)').matches;
++  R.setPixelRatio(Math.min(window.devicePixelRatio||1,touchScreen?1.25:2));R.shadowMap.enabled=true;R.shadowMap.type=touchScreen?THREE.PCFShadowMap:THREE.PCFSoftShadowMap;
+   container.appendChild(R.domElement);
+   const S=new THREE.Scene(),C=new THREE.PerspectiveCamera(38,1,.1,80);
+   S.add(new THREE.HemisphereLight(0xffffff,0x9bb7d6,.95*K));
+@@ -221,6 +222,6 @@ export function createCupGame(container,opts={}){
+       });
+       geometries.forEach(geometry=>geometry.dispose());materials.forEach(material=>material.dispose());
+       textures.forEach(texture=>texture.dispose());
+-      R.dispose();cv.remove();if(ui)ui.remove();container.classList.remove('cg-root')}
++      R.dispose();R.forceContextLoss();cv.remove();if(ui)ui.remove();container.classList.remove('cg-root')}
+   };
+ }
+diff --git a/src/game.js b/src/game.js
+index c642ffd..3d0799c 100644
+--- a/src/game.js
++++ b/src/game.js
+@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+ import { SkeletonUtils } from 'three/examples/jsm/utils/SkeletonUtils.js';
+ import { $, BN, BUILD, HOTEL, RENT, sleep, tween } from './config.js';
+ import { directedNeighbor, LINKS, MAP, MAP_ID, T, nextPos, sn, tp } from './map.js';
+-import { beginToolZoom, cameraOffset, cam, constrainWorldView, panOffset, renderer, scene, setCameraControlsLocked } from './scene.js';
++import { beginToolZoom, cameraOffset, cam, constrainWorldView, isMobileScreen, panOffset, renderer, scene, setCameraControlsLocked } from './scene.js';
+ import { HOSPITAL_POSITION, L, LOT_TARGET_MESHES, drawLot, flashLot, mergeStaticMeshes, setB, setLotDestroyed, updateLotRatingVisibility, updateWorldDecorations } from './world.js';
+ import { configurePlayers, laneOffset, P, place, portrait } from './players.js';
+ import { die, face, rollDie } from './dice.js';
+@@ -21,7 +21,7 @@ import { createItemJudge } from '../tools/item-judge.js';
+ import { createItemRemote } from '../tools/item-remote.js';
+ import { createItemThief } from '../tools/item-thief.js';
+ import { showBankDialog } from '../Bank/bank-dialog.js';
+-import { playEffect, playHammerTuk, playPetArrival, playPlayerTurn, startGameMusic, stopGameMusic } from './audio.js';
++import { pauseGameMusic, playEffect, playHammerTuk, playPetArrival, playPlayerTurn, resumeGameMusic, startGameMusic, stopGameMusic } from './audio.js';
+ import { botCashTarget, botReserve, botShouldUseItem, chooseBotRoll, chooseBotTarget, shouldBuyLot, shouldUpgradeLot } from './bot.js';
+ import babyUrl from '../pets-pack/models/baby.glb?url';
+ import catBlackUrl from '../pets-pack/models/cat_black.glb?url';
+@@ -898,7 +898,42 @@ function syncMovement(p,force=false){
+   sendProgress({player:p.i,x:p.m.position.x,y:p.m.position.y,z:p.m.position.z,rotation:p.m.rotation.y,walking:!!p.networkWalking})
+     ?.catch(error=>console.error('Online movement sync error:',error));
+ }
+-(function loop(){const now=performance.now(),delta=Math.min((now-lastPetFrame)/1000,.1);lastPetFrame=now;if(isGuest())P.forEach(p=>{if(p.networkTarget){p.m.position.lerp(p.networkTarget,.32);const turn=Math.atan2(Math.sin(p.networkRotation-p.m.rotation.y),Math.cos(p.networkRotation-p.m.rotation.y));p.m.rotation.y+=turn*.32}});foc.lerp(focusOverride||(now<petFocusUntil?petFocusTarget:P[G.cur].m.position),.07);target.copy(foc).add(panOffset);constrainWorldView(target,foc);updateLotRatingVisibility(target);cam.position.copy(target).add(cameraOffset).add(demolitionShake);cam.lookAt(target);P.forEach(p=>p.m.userData.update?.(now));L.forEach(l=>l?.b?.userData.update?.(now));obstacles.forEach(item=>item.model.userData.update?.(now));petVisuals.forEach(visual=>visual.mixer.update(delta));hospitalMixer?.update(delta);updateWorldDecorations(delta);renderer.render(scene,cam);requestAnimationFrame(loop)})();
++// ---------- loop render (hemat baterai) ----------
++// HP: maksimal ~30 FPS. Desktop: ~60 FPS. Papan permainan hampir statis, jadi 30 FPS sudah mulus.
++const FRAME_MS=isMobileScreen?1000/30:1000/60;
++let lastRenderAt=0,frameCounter=0;
++// Faktor lerp berbasis waktu supaya gerak kamera terasa sama di FPS berapa pun.
++const lerpFactor=(rate,seconds)=>1-Math.pow(1-rate,seconds*60);
++document.addEventListener('visibilitychange',()=>{document.hidden?pauseGameMusic():resumeGameMusic()});
++(function loop(){
++  requestAnimationFrame(loop);
++  if(document.hidden)return;
++  const now=performance.now();
++  if(now-lastRenderAt<FRAME_MS-4)return;
++  lastRenderAt=now;
++  const delta=Math.min((now-lastPetFrame)/1000,.1);lastPetFrame=now;
++  if(isGuest()){
++    const follow=lerpFactor(.32,delta);
++    P.forEach(p=>{if(p.networkTarget){
++      p.m.position.lerp(p.networkTarget,follow);
++      const turn=Math.atan2(Math.sin(p.networkRotation-p.m.rotation.y),Math.cos(p.networkRotation-p.m.rotation.y));
++      p.m.rotation.y+=turn*follow;
++    }});
++  }
++  foc.lerp(focusOverride||(now<petFocusUntil?petFocusTarget:P[G.cur].m.position),lerpFactor(.07,delta));
++  target.copy(foc).add(panOffset);
++  constrainWorldView(target,foc);
++  if(frameCounter++%6===0)updateLotRatingVisibility(target);
++  cam.position.copy(target).add(cameraOffset).add(demolitionShake);
++  cam.lookAt(target);
++  P.forEach(p=>p.m.userData.update?.(now));
++  L.forEach(l=>l?.b?.userData.update?.(now));
++  obstacles.forEach(item=>item.model.userData.update?.(now));
++  petVisuals.forEach(visual=>visual.mixer.update(delta));
++  hospitalMixer?.update(delta);
++  updateWorldDecorations(delta);
++  renderer.render(scene,cam);
++})();
+ setNetworkHandlers({
+   onState:state=>{try{applySnapshot(state)}catch(error){console.error(error)}},
+   onProgress:progress=>{
+diff --git a/src/scene.js b/src/scene.js
+index 10a30e6..9a292f2 100644
+--- a/src/scene.js
++++ b/src/scene.js
+@@ -3,12 +3,17 @@ import { $ } from './config.js';
+ 
+ // ---------- scene ----------
+ export const scene=new THREE.Scene();scene.background=new THREE.Color(0x8fd6ff);
+-export const renderer=new THREE.WebGLRenderer({canvas:$('c'),antialias:true,powerPreference:'high-performance'});
+-const mobileScreen=matchMedia('(max-width: 1000px) and (pointer: coarse)').matches;
+-renderer.setPixelRatio(Math.min(devicePixelRatio,mobileScreen?2:2.5));
++// Layar sentuh (HP/tablet) dirender lebih ringan supaya tidak panas dan hemat baterai.
++// Ubah MOBILE_PIXEL_RATIO: 1 = paling dingin, 1.5 = lebih tajam tapi lebih panas.
++export const isMobileScreen=matchMedia('(pointer: coarse)').matches;
++const MOBILE_PIXEL_RATIO=1.25;
++export const renderer=new THREE.WebGLRenderer({canvas:$('c'),antialias:!isMobileScreen,powerPreference:isMobileScreen?'default':'high-performance'});
++renderer.setPixelRatio(isMobileScreen?Math.min(devicePixelRatio,MOBILE_PIXEL_RATIO):Math.min(devicePixelRatio,2));
+ renderer.outputEncoding=THREE.sRGBEncoding;
+ export const cam=new THREE.OrthographicCamera(-1,1,1,-1,.1,150);
+ export const panOffset=new THREE.Vector3();
++// Vector sementara yang dipakai ulang tiap frame (mencegah garbage collection terus-menerus).
++const scratchRight=new THREE.Vector3(),scratchUp=new THREE.Vector3(),scratchDirection=new THREE.Vector3();
+ export const cameraOffset=new THREE.Vector3(12,8.5,12);
+ let worldBounds=null;
+ let panBounds=null;
+@@ -64,9 +69,9 @@ export function constrainWorldView(target,focus){
+   cam.position.copy(target).add(cameraOffset);
+   cam.lookAt(target);
+   cam.updateMatrixWorld();
+-  const right=new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld,0);
+-  const up=new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld,1);
+-  const direction=cam.getWorldDirection(new THREE.Vector3());
++  const right=scratchRight.setFromMatrixColumn(cam.matrixWorld,0);
++  const up=scratchUp.setFromMatrixColumn(cam.matrixWorld,1);
++  const direction=cam.getWorldDirection(scratchDirection);
+   const groundUp=up.addScaledVector(direction,-up.y/direction.y);
+   const halfWidth=cam.right/cam.zoom,halfHeight=cam.top/cam.zoom;
+   const reachX=halfWidth*Math.abs(right.x)+halfHeight*Math.abs(groundUp.x);
+diff --git a/ui/property-preview.js b/ui/property-preview.js
+index f5576ed..31e4ac6 100644
+--- a/ui/property-preview.js
++++ b/ui/property-preview.js
+@@ -1,7 +1,16 @@
+ import * as THREE from 'three';
+ import { createPropertyModel, disposePropertyModel } from './property-model.js';
+ 
++// Gambar pratinjau disimpan per (level, tipe) supaya tidak membuat WebGL context & render ulang tiap dialog dibuka.
++const previewCache=new Map();
+ export function propertyPreview(level,hotel){
++  const cacheKey=`${level}:${hotel?1:0}`;
++  if(previewCache.has(cacheKey))return previewCache.get(cacheKey);
++  const image=renderPropertyPreview(level,hotel);
++  if(image)previewCache.set(cacheKey,image);
++  return image;
++}
++function renderPropertyPreview(level,hotel){
+   const footprint=hotel?3.8:1.9;
+   const model=createPropertyModel(level,hotel,footprint);
+   if(!model)return '';
+diff --git a/ui/tool-preview.js b/ui/tool-preview.js
+index 28ea3eb..bd77ea7 100644
+--- a/ui/tool-preview.js
++++ b/ui/tool-preview.js
+@@ -39,71 +39,105 @@ function dispose(model){
+   });
+ }
+ 
+-export function createToolPreview(){
+-  const canvas=document.createElement('canvas');
+-  canvas.className='sp-tool-preview';
+-  canvas.setAttribute('aria-label','Pratinjau alat 3D');
++function createStage(canvas,pixelRatio){
+   const renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true});
+-  renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
++  renderer.setPixelRatio(pixelRatio);
+   renderer.outputEncoding=THREE.sRGBEncoding;
+   const scene=new THREE.Scene();
+   scene.add(new THREE.AmbientLight(0xffffff,.65));
+   const key=new THREE.DirectionalLight(0xffffff,1);key.position.set(4,7,6);scene.add(key);
+   const fill=new THREE.DirectionalLight(0x9dbbff,.3);fill.position.set(-5,3,-4);scene.add(fill);
+   const camera=new THREE.PerspectiveCamera(34,1,.01,100);
+-  let model=null,container=null,active=true,raf=0;
+-  renderer.setSize(160,160,false);
++  return {renderer,scene,camera};
++}
++
++function loadModel({scene,camera},id){
++  const factory=FACTORIES[id];if(!factory)return null;
++  const model=factory();model.rotation.y=-.45;scene.add(model);
++  const bounds=new THREE.Box3().setFromObject(model),center=bounds.getCenter(new THREE.Vector3()),sphere=bounds.getBoundingSphere(new THREE.Sphere());
++  model.position.sub(center);
++  const radius=Math.max(sphere.radius,.1),distance=radius/Math.sin(THREE.MathUtils.degToRad(camera.fov/2))*.9;
++  camera.position.set(.8,.48,1).normalize().multiplyScalar(distance);camera.lookAt(0,0,0);
++  camera.near=Math.max(.01,distance-radius*1.5);camera.far=distance+radius*2;camera.updateProjectionMatrix();
++  return model;
++}
++
++// Thumbnail dibuat SEKALI saja selama aplikasi hidup (cache), memakai renderer sementara
++// yang langsung dibuang. Sebelumnya 14 thumbnail dirender ulang setiap toko/inventaris dibuka.
++let thumbnailCache=null;
++function buildThumbnails(){
++  if(thumbnailCache)return thumbnailCache;
++  const canvas=document.createElement('canvas');
++  const stage=createStage(canvas,Math.min(devicePixelRatio||1,2));
++  stage.renderer.setSize(160,160,false);
++  const result={};
++  try{
++    for(const id of Object.keys(FACTORIES)){
++      const model=loadModel(stage,id);
++      if(!model){result[id]='';continue}
++      model.userData.update?.(0);
++      stage.renderer.render(stage.scene,stage.camera);
++      result[id]=canvas.toDataURL('image/png');
++      stage.scene.remove(model);dispose(model);
++    }
++  }finally{
++    stage.renderer.dispose();stage.renderer.forceContextLoss();
++  }
++  thumbnailCache=result;
++  return result;
++}
++
++// Renderer "live" hanya dibuat saat show() dipanggil dan loop animasinya hanya berjalan
++// selama ada model yang tampil. Sebelumnya loop render jalan terus walau scene kosong.
++export function createToolPreview(){
++  let stage=null,canvas=null,observer=null,model=null,container=null,raf=0,destroyed=false;
+ 
++  function ensureStage(){
++    if(stage)return stage;
++    canvas=document.createElement('canvas');
++    canvas.className='sp-tool-preview';
++    canvas.setAttribute('aria-label','Pratinjau alat 3D');
++    stage=createStage(canvas,Math.min(devicePixelRatio||1,1.5));
++    stage.renderer.setSize(160,160,false);
++    observer=new ResizeObserver(resize);
++    return stage;
++  }
+   function resize(){
+-    if(!container)return;
++    if(!stage||!container)return;
+     const width=Math.max(1,container.clientWidth),height=Math.max(1,container.clientHeight);
+-    renderer.setSize(width,height,false);
+-    camera.aspect=width/height;camera.updateProjectionMatrix();
+-  }
+-  function loadModel(id){
+-    const factory=FACTORIES[id];if(!factory)return false;
+-    model=factory();model.rotation.y=-.45;scene.add(model);
+-    const bounds=new THREE.Box3().setFromObject(model),center=bounds.getCenter(new THREE.Vector3()),sphere=bounds.getBoundingSphere(new THREE.Sphere());
+-    model.position.sub(center);
+-    const radius=Math.max(sphere.radius,.1),distance=radius/Math.sin(THREE.MathUtils.degToRad(camera.fov/2))*.9;
+-    camera.position.set(.8,.48,1).normalize().multiplyScalar(distance);camera.lookAt(0,0,0);
+-    camera.near=Math.max(.01,distance-radius*1.5);camera.far=distance+radius*2;camera.updateProjectionMatrix();
+-    return true;
++    stage.renderer.setSize(width,height,false);
++    stage.camera.aspect=width/height;stage.camera.updateProjectionMatrix();
+   }
+-  function thumbnail(id){
+-    if(model){scene.remove(model);dispose(model);model=null}
+-    if(!loadModel(id))return '';
+-    model.userData.update?.(0);renderer.render(scene,camera);
+-    const image=renderer.domElement.toDataURL('image/png');
+-    scene.remove(model);dispose(model);model=null;
+-    return image;
++  function stopLoop(){if(raf){cancelAnimationFrame(raf);raf=0}}
++  function frame(now){
++    if(destroyed||!model){raf=0;return}
++    raf=requestAnimationFrame(frame);
++    model.rotation.y=-.45+Math.sin(now*.00055)*.16;model.userData.update?.(now);
++    stage.renderer.render(stage.scene,stage.camera);
+   }
+-  const thumbnails=Object.fromEntries(Object.keys(FACTORIES).map(id=>[id,thumbnail(id)]));
+-
+   function show(id,target){
++    if(destroyed)return;
++    const current=ensureStage();
+     if(target&&target!==container){
+       if(container)observer.unobserve(container);
+       container=target;container.replaceChildren(canvas);observer.observe(container);
+     }
+-    if(model){scene.remove(model);dispose(model);model=null}
+-    if(!loadModel(id))return;
++    stopLoop();
++    if(model){current.scene.remove(model);dispose(model);model=null}
++    model=loadModel(current,id);
++    if(!model)return;
+     resize();
++    raf=requestAnimationFrame(frame);
+   }
+-  function render(now){
+-    if(!active)return;
+-    if(model){model.rotation.y=-.45+Math.sin(now*.00055)*.16;model.userData.update?.(now)}
+-    renderer.render(scene,camera);raf=requestAnimationFrame(render);
+-  }
+-  const observer=new ResizeObserver(resize);
+-  raf=requestAnimationFrame(render);
+ 
+   return {
+     show,
+-    thumbnail:id=>thumbnails[id]||'',
++    thumbnail:id=>buildThumbnails()[id]||'',
+     destroy(){
+-      active=false;cancelAnimationFrame(raf);observer.disconnect();
+-      if(model)dispose(model);
+-      renderer.dispose();renderer.forceContextLoss();container?.replaceChildren();
++      destroyed=true;stopLoop();observer?.disconnect();
++      if(model){dispose(model);model=null}
++      if(stage){stage.renderer.dispose();stage.renderer.forceContextLoss();stage=null}
++      container?.replaceChildren();
+     }
+   };
+ }
+diff --git a/vite.config.js b/vite.config.js
+new file mode 100644
+index 0000000..463e151
+--- /dev/null
++++ b/vite.config.js
+@@ -0,0 +1,16 @@
++import { defineConfig } from 'vite';
++
++// Pecah library besar jadi chunk terpisah supaya chunk utama lebih kecil dan peringatan ukuran hilang.
++export default defineConfig({
++  build: {
++    chunkSizeWarningLimit: 900,
++    rollupOptions: {
++      output: {
++        manualChunks(id) {
++          if (id.includes('node_modules/three/')) return 'three';
++          if (id.includes('node_modules/@supabase/')) return 'supabase';
++        }
++      }
++    }
++  }
++});

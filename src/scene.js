@@ -1,7 +1,10 @@
 import * as THREE from 'three';
+import { Capacitor } from '@capacitor/core';
 import { $ } from './config.js';
 
 // ---------- scene ----------
+if(Capacitor.isNativePlatform()&&Capacitor.getPlatform()==='android')
+  document.body.classList.add('android-native');
 export const scene=new THREE.Scene();scene.background=new THREE.Color(0x8fd6ff);
 export const renderer=new THREE.WebGLRenderer({canvas:$('c'),antialias:true,powerPreference:'high-performance'});
 const mobileScreen=matchMedia('(max-width: 1000px) and (pointer: coarse)').matches;
@@ -42,7 +45,7 @@ function setZoom(value,maxZoom=MAX_ZOOM){
 }
 export function beginToolZoom(){
   const previousZoom=cam.zoom;
-  setZoom(previousZoom*2,MAX_ZOOM*2);
+  setZoom(previousZoom*1.5,MAX_ZOOM*1.5);
   let restored=false;
   return ()=>{
     if(restored)return;

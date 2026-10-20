@@ -15,11 +15,16 @@ import { createItemCone } from '../tools/item-cone.js';
 import { createItemBroom } from '../tools/item-broom.js';
 import { createItemComputer } from '../tools/item-computer.js';
 import { createItemForRent } from '../tools/item-forrent.js';
-import { confirmDemolition as confirmDemolitionDialog, demolitionShake, playDemolition } from '../tools/demolition-fx.js';
+import { demolitionShake, playDemolition } from '../tools/demolition-fx.js';
 import { createItemHelmet } from '../tools/item-helmet.js';
 import { createItemJudge } from '../tools/item-judge.js';
 import { createItemRemote } from '../tools/item-remote.js';
 import { createItemThief } from '../tools/item-thief.js';
+import { createStopSignModel, dropStopSign, placeStopSign, playForcedStop } from '../tools/stopsign.js';
+import { playLawyerTakeover } from '../tools/lawyer-fx.js';
+import { pickThiefTarget, playHeist } from '../tools/thief-ui.js';
+import { fxShake } from '../tools/fx-kit.js';
+import { confirmPreview } from '../tools/confirm-dialog.js';
 import { showBankDialog } from '../Bank/bank-dialog.js';
 import { playEffect, playHammerTuk, playPetArrival, playPlayerTurn, startGameMusic, stopGameMusic } from './audio.js';
 import { botCashTarget, botReserve, botShouldUseItem, chooseBotRoll, chooseBotTarget, shouldBuyLot, shouldUpgradeLot } from './bot.js';
@@ -29,7 +34,7 @@ import catWhiteUrl from '../pets-pack/models/cat_white.glb?url';
 import santaUrl from '../pets-pack/models/santa.glb?url';
 import hospitalUrl from '../landmarks-pack/models/hospital.glb?url';
 import { pickLot } from '../ui/lot-picker.js';
-import { playStarMinigame, STAR_REWARD } from './star-minigame.js';
+import { playStarMinigame } from './star-minigame.js';
 
 // ---------- aturan ----------
 const ownedLots=()=>[...new Set(L)].filter(lot=>lot&&!lot.destroyed);
@@ -225,7 +230,7 @@ function placeAtHospital(p){
 }
 function disposeObject(object){
   object.traverse(child=>{if(!child.isMesh)return;child.geometry?.dispose();const materials=Array.isArray(child.material)?child.material:[child.material];
-    materials.forEach(material=>{material?.map?.dispose();material?.dispose()})});
+    materials.forEach(material=>{if(!material?.map?._shared)material?.map?.dispose();material?.dispose()})});
 }
 const itemModels={
   broom:[createItemBroom,.25],computer:[createItemComputer,.19],
@@ -248,8 +253,8 @@ async function showToolModel(id,p,{near=p,scaleOverride=null}={}){
   }finally{scene.remove(model);disposeObject(model)}
 }
 function obstacleModel(data,{preview=false}={}){
-  const model=data.id==='bomb'?createItemBomb():data.id==='street-sign'?createItemArrow({dir:data.dir||'front'}):createItemCone();
-  model.scale.setScalar(data.id==='bomb'?.38:data.id==='street-sign'?.3:.55);
+  const model=data.id==='bomb'?createItemBomb():data.id==='street-sign'?createItemArrow({dir:data.dir||'front'}):data.id==='stop-sign'?createStopSignModel():createItemCone();
+  if(data.id!=='stop-sign')model.scale.setScalar(data.id==='bomb'?.38:data.id==='street-sign'?.3:.55);
   if(preview)model.traverse(object=>{
     if(!object.isMesh)return;
     const clone=material=>{
@@ -277,7 +282,7 @@ function createPlacementPreview(id,dir){
 }
 function setObstacle(tile,data){
   const old=obstacles.get(tile);if(old){scene.remove(old.model);disposeObject(old.model);obstacles.delete(tile)}
-  if(data){const obstacle={...data,tile,model:obstacleModel({...data,tile})};obstacles.set(tile,obstacle)}
+  if(data){const model=data.model||obstacleModel({...data,tile}),[x,z]=tp(tile);model.position.set(x,.02,z);scene.add(model);const obstacle={...data,tile,model};obstacles.set(tile,obstacle)}
 }
 function clearObstacle(tile){const obstacle=obstacles.get(tile);if(!obstacle)return false;
   scene.remove(obstacle.model);disposeObject(obstacle.model);obstacles.delete(tile);return true}
@@ -336,6 +341,19 @@ async function chooseToolTarget(p,id,message){
   if(p.h){
     setCameraControlsLocked(true);
     try{
+      if(id==='stop-sign'){
+        const tiles=MAP.map((_,idx)=>{const [x,z]=tp(idx);return {idx,x,z}})
+          .filter(tile=>T[tile.idx][1]!=='l');
+        const signs=new Map([...obstacles]
+          .filter(([,obstacle])=>obstacle.id==='stop-sign')
+          .map(([tile,obstacle])=>[tile,obstacle.model]));
+        const placement=placeStopSign({
+          dom:renderer.domElement,camera:cam,scene,tiles,signs,
+          mount:document.getElementById('app'),player:p
+        });
+        const result=await placement.promise;
+        return result?.tile.idx??null;
+      }
       if(id==='demolition'||id==='for-rent'){
         document.getElementById('ov')?.replaceChildren();
         cam.updateMatrixWorld(true);
@@ -384,6 +402,7 @@ async function chooseToolTarget(p,id,message){
 function allowedTargetFor(tile,id,p){
   const lot=L[tile];
   if(id==='broom')return isPathTile(tile);
+  if(id==='stop-sign')return isPathTile(tile)&&T[tile][1]!=='l';
   if(id==='demolition')return !!lot&&!lot.destroyed;
   if(id==='for-rent')return !!lot&&!lot.destroyed;
   if(id==='lawyer')return tile===p.pos&&!!lot&&lot.o>=0&&lot.o!==p.i;
@@ -432,51 +451,74 @@ function canUseToolkit(p){
 }
 async function confirmToolkit(p,lot){
   const level=lot.lv+1,rent=propertyRent(lot,level),hotel=lot.s===2;
-  return p.h
-    ?buyPropertyDlg(p,hotel?HOTEL[level]:BN[level],0,rent,{level,hotel})
-    :true;
+  if(!p.h)return true;
+  return confirmPreview({
+    title:'Use Toolkit?',
+    text:`Upgrade ${lot.id} to ${hotel?'hotel':'level '+level}?\nCost: $0  |  New rent: $${rent}`,
+    toolId:'toolkit',player:p
+  });
 }
 async function confirmDemolition(p,lot){
   const hasBuilding=lot.lv>0&&!!lot.b;
   return p.h
-    ?confirmDemolitionDialog({
-      mount:document.getElementById('app'),
-      kind:hasBuilding?(lot.s===2?'hotel':'house'):'lot',
-      owner:lot.o>=0?P[lot.o].n:'',
+    ?confirmPreview({
       title:`Hancurkan ${lot.id}?`,
-      texts:{
-        house:'Bangunan rumah ini akan dihancurkan. Tindakan ini tidak dapat dibatalkan.',
-        hotel:'Bangunan hotel ini akan dihancurkan. Tindakan ini tidak dapat dibatalkan.',
-        lot:'Lahan kosong ini akan dihancurkan menjadi puing. Tindakan ini tidak dapat dibatalkan.'
-      }
+      text:`${hasBuilding?(lot.s===2?'Bangunan hotel':'Bangunan rumah'):'Lahan kosong'} akan dihancurkan.\nTindakan ini tidak dapat dibatalkan.`,
+      toolId:'demolition',player:p
     })
     :true;
 }
-async function confirmToolTarget(p,title,description){
-  return p.h?ask(portrait(p),title,description,'✓','✕'):true;
+async function confirmToolTarget(p,title,description,toolId){
+  return p.h?confirmPreview({title,text:description,toolId,player:p}):true;
 }
 async function collectGuestAction(p,item){
   if(item.id==='computer'){
     if(p.bank<=0)return null;
     const result=await showBankDialog({cash:0,bank:p.bank,mount:document.getElementById('ov'),labels:{cash:'Diambil:',bank:'Sisa bank:'}});
-    return result.confirmed&&result.cash>0?{amount:result.cash}:null;
+    if(!result.confirmed||result.cash<=0)return null;
+    const confirmed=await confirmPreview({
+      title:'Use Computer?',
+      text:`Withdraw $${result.cash} from your bank?`,
+      toolId:'computer',player:p
+    });
+    return confirmed?{amount:result.cash,confirm:true}:null;
   }
   if(item.id==='remote-control'){
     const roll=await chooseDieValue();
-    return roll===null?null:{roll};
+    if(roll===null)return null;
+    const confirmed=await confirmPreview({
+      title:'Use Remote Control?',
+      text:`Set your next dice roll to ${roll}?`,
+      toolId:'remote-control',player:p
+    });
+    return confirmed?{roll,confirm:true}:null;
   }
   if(item.id==='thief'){
     const targets=P.filter(target=>target.alive&&target.i!==p.i&&target.cash>0);
     if(!targets.length)return null;
     const targetIndex=await chooseOne('Pilih target pencurian',targets.map(target=>({label:`${target.n} — $${target.cash}`,value:target.i})));
-    return targetIndex===null?null:{targetIndex};
+    if(targetIndex===null)return null;
+    const target=targets.find(candidate=>candidate.i===targetIndex);
+    const confirmed=await confirmPreview({
+      title:`Rob ${target.n}?`,
+      text:`Steal 25% of their cash: $${Math.floor(target.cash*.25)}\nTheir savings are safe.`,
+      toolId:'thief',player:p
+    });
+    return confirmed?{targetIndex,confirm:true}:null;
   }
   if(item.id==='toolkit'){
     const lot=canUseToolkit(p);if(!lot)return null;
     return await confirmToolkit(p,lot)?{confirm:true}:null;
   }
   if(item.id==='lawyer'){
-    return allowedTargetFor(p.pos,item.id,p)?{tile:p.pos}:null;
+    if(!allowedTargetFor(p.pos,item.id,p))return null;
+    const lot=L[p.pos],former=P[lot.o];
+    const confirmed=await confirmPreview({
+      title:'Use Lawyer?',
+      text:`Take over ${lot.id} from ${former.n}?\nYou will not need to pay rent.`,
+      toolId:'lawyer',player:p
+    });
+    return confirmed?{tile:p.pos,confirm:true}:null;
   }
   const messages={
     bomb:'Klik petak jalan tempat bom akan dipasang.',
@@ -493,6 +535,14 @@ async function collectGuestAction(p,item){
   };
   const tile=await chooseToolTarget(p,item.id,messages[item.id]||'Pilih petak sasaran.');
   if(tile===null||tile===undefined)return null;
+  if(item.id==='bomb'||item.id==='stop-sign'||isStreetSign(item.id)){
+    const confirmed=await confirmPreview({
+      title:`Place ${item.n}?`,
+      text:`Place this tool on ${sn(tile)}?`,
+      toolId:item.id,player:p
+    });
+    return confirmed?{tile,confirm:true}:null;
+  }
   if(item.id==='demolition'){
     const lot=L[tile];if(!lot||!await confirmDemolition(p,lot))return null;
     return {tile,confirm:true};
@@ -501,11 +551,11 @@ async function collectGuestAction(p,item){
     const lot=L[tile];
     if(!lot)return null;
     const startingBid=lot.price;
-    if(!await confirmToolTarget(p,'Lelang '+lot.id,`Harga awal: $${startingBid}<br>Kenaikan tawaran: $100`))return null;
+    if(!await confirmToolTarget(p,'Lelang '+lot.id,`Harga awal: $${startingBid}\nKenaikan tawaran: $100`,'for-rent'))return null;
     return {tile,confirm:true};
   }
   if(item.id==='broom'){
-    if(!await confirmToolTarget(p,'Sapu petak ini?','Rintangan di petak jalan yang dipilih akan dibersihkan.'))return null;
+    if(!await confirmToolTarget(p,'Sapu petak ini?','Rintangan di petak jalan yang dipilih akan dibersihkan.','broom'))return null;
     return {tile,confirm:true};
   }
   return {tile};
@@ -530,35 +580,73 @@ async function performItemUse(p,index,action){
     }
     if(amount===null)return false;
     if(!Number.isSafeInteger(amount)||amount<1||amount>p.bank)return false;
+    if(p.h&&action?.confirm!==true&&!(await confirmPreview({
+      title:'Use Computer?',
+      text:`Withdraw $${amount} from your bank?`,
+      toolId:'computer',player:p
+    })))return false;
     p.bank-=amount;p.cash+=amount;used=true;playEffect('bank');
     await ban(portrait(p),p.css,'COMPUTER',`Ambil $${amount} dari tabungan`,1000);
   }else if(item.id==='remote-control'){
     const result=action?.roll??(p.h?await chooseDieValue():chooseBotRoll(p,G.botContext()));
     if(result===null)return false;
     if(!Number.isSafeInteger(result)||result<1||result>6)return false;
+    if(p.h&&action?.confirm!==true&&!(await confirmPreview({
+      title:'Use Remote Control?',
+      text:`Set your next dice roll to ${result}?`,
+      toolId:'remote-control',player:p
+    })))return false;
     p.nextRoll=result;used=true;await showToolModel(item.id,p,{scaleOverride:.52});
     await ban(portrait(p),p.css,'REMOTE CONTROL',`Dadu berikutnya: ${result}`,900);
   }else if(item.id==='lawyer'){
     const tile=p.pos,lot=L[tile];
     if(!allowedTargetFor(tile,item.id,p)){if(p.h)await ban(portrait(p),p.css,'LAWYER','Kamu harus berhenti di lahan milik lawan.',1000);return false}
-    const former=P[lot.o];lot.o=p.i;drawLot(tile);used=true;
+    const former=P[lot.o];
+    if(action?.confirm!==true&&p.h&&!(await confirmPreview({
+      title:'Use Lawyer?',
+      text:`Ambil alih ${lot.id} dari ${former.n}?\nKamu tidak perlu membayar sewa.`,
+      toolId:'lawyer',player:p
+    })))return false;
+    used=true;
+    await playLawyerTakeover({
+      scene,lot:{x:lot.lx,z:lot.lz,w:lot.s*2,frame:lot.frame,building:lot.b},
+      from:{color:former.css,name:former.n},to:{color:p.css,name:p.n},
+      prop:createItemJudge(),
+      onSlam:()=>{lot.o=p.i;drawLot(tile);hud()}
+    });
     await playerEvent(p,'happy','LAWYER CLAIM',`${lot.id} sekarang milikmu`);
     await playerEvent(former,'sad','LAHAN DIAMBIL',`${lot.id} diambil oleh ${p.n}`);
-    await showToolModel(item.id,p,{scaleOverride:.4});
   }else if(item.id==='thief'){
     const targets=P.filter(target=>target.alive&&target.i!==p.i&&target.cash>0);
     if(!targets.length)return false;
-    const targetIndex=action?.targetIndex??(p.h
-      ?await chooseOne('Pilih target pencurian',targets.map(target=>({label:`${target.n} — $${target.cash}`,value:target.i})))
-      :targets.sort((a,b)=>b.cash-a.cash)[0].i);
-    if(!targets.some(target=>target.i===targetIndex))return false;
-    if(targetIndex===null)return false;
-    const target=P[targetIndex],stolen=Math.floor(target.cash*.25);
+    const tokens=P.filter(target=>target.alive).map(target=>({
+      id:target.i,name:target.n,type:target.avatarType,color:target.css,cash:target.cash,root:target.m
+    }));
+    let target;
+    if(p.h&&action?.targetIndex===undefined){
+      const pick=pickThiefTarget({
+        dom:renderer.domElement,camera:cam,scene,tokens,thiefId:p.i,mount:document.getElementById('app'),
+        focusTo:token=>{focusOverride=token.root.position.clone()}
+      });
+      const result=await pick.promise;
+      if(!result)return false;
+      target=P[result.token.id];
+    }else{
+      const targetIndex=action?.targetIndex??targets.sort((a,b)=>b.cash-a.cash)[0].i;
+      if(!targets.some(candidate=>candidate.i===targetIndex))return false;
+      target=P[targetIndex];
+    }
+    const stolen=Math.floor(target.cash*.25);
     if(!stolen)return false;
-    target.cash-=stolen;p.cash+=stolen;used=true;
+    used=true;
+    const thiefToken=tokens.find(token=>token.id===p.i),victimToken=tokens.find(token=>token.id===target.i);
+    await playHeist({
+      scene,thief:thiefToken,victim:victimToken,amount:stolen,
+      actor:createItemThief(),actorScale:.3,
+      onSnatch:()=>{target.cash-=stolen;p.cash+=stolen;hud()}
+    });
     await playerEvent(target,'sad','UANG DICURI',`Kehilangan $${stolen} oleh ${p.n}`);
     await playerEvent(p,'happy','MENCURI UANG',`Mendapatkan $${stolen} dari ${target.n}`);
-    await showToolModel(item.id,p,{scaleOverride:.48});
   }else if(item.id==='toolkit'){
     const lot=canUseToolkit(p);
     if(!lot){if(p.h)await ban(portrait(p),p.css,'TOOLKIT',p.pet?.kind==='baby'
@@ -588,10 +676,27 @@ async function performItemUse(p,index,action){
     if(!allowedTargetFor(tile,item.id,p))return false;
     if(item.id==='bomb'||item.id==='stop-sign'||isStreetSign(item.id)){
       const dir=isStreetSign(item.id)?STREET_SIGN_DIRS[item.id]:'front';
-      setObstacle(tile,{id:isStreetSign(item.id)?'street-sign':item.id,dir});used=true;
+      if(item.id==='stop-sign'){
+        const [x,z]=tp(tile),sign=await dropStopSign({scene,tile:{idx:tile,x,z}});
+        setObstacle(tile,{id:'stop-sign',dir,model:sign});
+      }else{
+        const confirmed=action?.confirm??(p.h?await confirmPreview({
+          title:`Place ${item.n}?`,
+          text:`Place this tool on ${sn(tile)}?`,
+          toolId:item.id,player:p
+        }):true);
+        if(!confirmed)return false;
+        setObstacle(tile,{id:isStreetSign(item.id)?'street-sign':item.id,dir});
+      }
+      used=true;
       await ban(portrait(p),p.css,item.n,'Rintangan dipasang di '+sn(tile),950);
     }else if(item.id==='broom'){
-      if(action?.confirm!==true&&p.h)return false;
+      const confirmed=action?.confirm??(p.h?await confirmPreview({
+        title:'Sapu petak ini?',
+        text:`Bersihkan rintangan di ${sn(tile)}?`,
+        toolId:'broom',player:p
+      }):true);
+      if(!confirmed)return false;
       if(!clearObstacle(tile)){if(p.h)await ban(portrait(p),p.css,'BROOM','Tidak ada rintangan di petak ini.',950);return false}
       used=true;await showToolModel(item.id,p);
       await ban(portrait(p),p.css,'BROOM','Rintangan berhasil dibersihkan',950);
@@ -623,7 +728,7 @@ async function performItemUse(p,index,action){
       if(action?.confirm!==true&&p.h){
         const startingBid=lot.price;
         if(!await confirmToolTarget(p,'Lelang '+lot.id,
-          `Harga awal: $${startingBid}<br>Kenaikan tawaran: $100`))return false;
+          `Harga awal: $${startingBid}\nKenaikan tawaran: $100`,'for-rent'))return false;
       }
       used=true;await showToolModel(item.id,p);await runAuction(p,tile);
     }
@@ -716,7 +821,9 @@ async function step(p,n){for(let k=0;k<n;k++){
       clearObstacle(nx);
       p.nextMove=nextMoveFor(p);
     }else if(obstacle?.id==='stop-sign'){
-      clearObstacle(nx);
+      obstacles.delete(nx);
+      const direction=new THREE.Vector3(b[0]-a[0],0,b[1]-a[1]).normalize();
+      await playForcedStop({scene,token:{root:p.m},sign:obstacle.model,dir:direction});
       if(p.h)await ban(portrait(p),p.css,'STOP','Tanda berhenti mengakhiri langkahmu',900);
       break;
     }
@@ -739,10 +846,10 @@ async function land(p){const t=T[p.pos],l=L[p.pos];
   }
   if(l?.destroyed)return;
   if(t[1]=='star'){
-    const won=await playStarMinigame(p);
-    if(won){
-      p.cash+=STAR_REWARD;playEffect('coins');hud();
-      await playerEvent(p,'happy','MENANG MINI GAME',`Mendapatkan $${STAR_REWARD} dari bintang`);
+    const reward=await playStarMinigame(p);
+    if(reward>0){
+      p.cash+=reward;playEffect('coins');hud();
+      await playerEvent(p,'happy','MENANG MINI GAME',`Mendapatkan $${reward} dari bintang`);
     }else{
       hud();await playerEvent(p,'sad','MINI GAME SELESAI','Koin tidak berhasil ditemukan');
     }
@@ -898,7 +1005,7 @@ function syncMovement(p,force=false){
   sendProgress({player:p.i,x:p.m.position.x,y:p.m.position.y,z:p.m.position.z,rotation:p.m.rotation.y,walking:!!p.networkWalking})
     ?.catch(error=>console.error('Online movement sync error:',error));
 }
-(function loop(){const now=performance.now(),delta=Math.min((now-lastPetFrame)/1000,.1);lastPetFrame=now;if(isGuest())P.forEach(p=>{if(p.networkTarget){p.m.position.lerp(p.networkTarget,.32);const turn=Math.atan2(Math.sin(p.networkRotation-p.m.rotation.y),Math.cos(p.networkRotation-p.m.rotation.y));p.m.rotation.y+=turn*.32}});foc.lerp(focusOverride||(now<petFocusUntil?petFocusTarget:P[G.cur].m.position),.07);target.copy(foc).add(panOffset);constrainWorldView(target,foc);updateLotRatingVisibility(target);cam.position.copy(target).add(cameraOffset).add(demolitionShake);cam.lookAt(target);P.forEach(p=>p.m.userData.update?.(now));L.forEach(l=>l?.b?.userData.update?.(now));obstacles.forEach(item=>item.model.userData.update?.(now));petVisuals.forEach(visual=>visual.mixer.update(delta));hospitalMixer?.update(delta);updateWorldDecorations(delta);renderer.render(scene,cam);requestAnimationFrame(loop)})();
+(function loop(){const now=performance.now(),delta=Math.min((now-lastPetFrame)/1000,.1);lastPetFrame=now;if(isGuest())P.forEach(p=>{if(p.networkTarget){p.m.position.lerp(p.networkTarget,.32);const turn=Math.atan2(Math.sin(p.networkRotation-p.m.rotation.y),Math.cos(p.networkRotation-p.m.rotation.y));p.m.rotation.y+=turn*.32}});foc.lerp(focusOverride||(now<petFocusUntil?petFocusTarget:P[G.cur].m.position),.07);target.copy(foc).add(panOffset);constrainWorldView(target,foc);updateLotRatingVisibility(target);cam.position.copy(target).add(cameraOffset).add(demolitionShake).add(fxShake);cam.lookAt(target);P.forEach(p=>p.m.userData.update?.(now));L.forEach(l=>l?.b?.userData.update?.(now));obstacles.forEach(item=>item.model.userData.update?.(now));petVisuals.forEach(visual=>visual.mixer.update(delta));hospitalMixer?.update(delta);updateWorldDecorations(delta);renderer.render(scene,cam);requestAnimationFrame(loop)})();
 setNetworkHandlers({
   onState:state=>{try{applySnapshot(state)}catch(error){console.error(error)}},
   onProgress:progress=>{
@@ -930,12 +1037,13 @@ setNetworkHandlers({
     if(G.cur!==1||!p?.alive||!Number.isInteger(itemIndex)||itemIndex<0||itemIndex>=p.inv.length||!action||typeof action!=='object')
       return false;
     const id=p.inv[itemIndex].id;
-    if(id==='computer'&&!Number.isSafeInteger(action.amount))return false;
-    if(id==='remote-control'&&(!Number.isSafeInteger(action.roll)||action.roll<1||action.roll>6))return false;
-    if(id==='thief'&&!Number.isInteger(action.targetIndex))return false;
+    if(id==='computer'&&(!Number.isSafeInteger(action.amount)||action.confirm!==true))return false;
+    if(id==='remote-control'&&(!Number.isSafeInteger(action.roll)||action.roll<1||action.roll>6||action.confirm!==true))return false;
+    if(id==='thief'&&(!Number.isInteger(action.targetIndex)||action.confirm!==true))return false;
     if(id==='toolkit'&&action.confirm!==true)return false;
     if(['demolition','for-rent','broom'].includes(id)&&(!Number.isInteger(action.tile)||action.confirm!==true))return false;
-    if(id==='lawyer'&&action.tile!==p.pos)return false;
+    if(id==='lawyer'&&(action.tile!==p.pos||action.confirm!==true))return false;
+    if((id==='bomb'||id==='stop-sign'||isStreetSign(id))&&action.confirm!==true)return false;
     if(!['computer','remote-control','thief','toolkit','demolition'].includes(id)&&!Number.isInteger(action.tile))return false;
     if(isStreetSign(id)&&action.dir!==undefined)return false;
     return useItem(p,itemIndex,action);
